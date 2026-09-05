@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPACE TYPING // 弾幕タイピングRPG</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="game" width="960" height="720"></canvas>
+    <div id="scanlines"></div>
+
+    <!-- ===== HUD ===== -->
+    <div id="hud" class="hidden">
+      <div class="hud-top">
+        <div class="hud-left">
+          <div class="bar-row">
+            <span class="bar-label">HULL</span>
+            <div class="bar hp"><div class="bar-fill" id="hpFill"></div><span class="bar-text" id="hpText">100/100</span></div>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">SHLD</span>
+            <div class="bar sh"><div class="bar-fill" id="shFill"></div><span class="bar-text" id="shText">0</span></div>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">ENGY</span>
+            <div class="bar en"><div class="bar-fill" id="enFill"></div><span class="bar-text" id="enText">0</span></div>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">O.D.</span>
+            <div class="bar od"><div class="bar-fill" id="odFill"></div><span class="bar-text" id="odText">0%</span></div>
+          </div>
+        </div>
+        <div class="hud-center">
+          <div id="sectorName">SECTOR 1</div>
+          <div id="waveInfo">WAVE 1 / 5</div>
+          <div id="pressureWrap">
+            <span id="pressureLabel">戦域圧力</span>
+            <div class="bar pr"><div class="bar-fill" id="prFill"></div></div>
+            <span id="pressurePct">0%</span>
+          </div>
+          <div id="bossBarWrap" class="hidden">
+            <div id="bossName">BOSS</div>
+            <div class="bar boss"><div class="bar-fill" id="bossFill"></div></div>
+          </div>
+        </div>
+        <div class="hud-right">
+          <div class="stat-line"><span>SCORE</span><b id="scoreVal">0</b></div>
+          <div class="stat-line"><span>COMBO</span><b id="comboVal" class="combo">0</b></div>
+          <div class="stat-line"><span>WPM</span><b id="wpmVal">0</b></div>
+          <div class="stat-line"><span>ACC</span><b id="accVal">100%</b></div>
+        </div>
+      </div>
+
+      <div class="hud-bottom">
+        <div id="modeBar">
+          <span class="mode-chip" id="chipAttack">攻撃 ATTACK</span>
+          <span class="mode-sep">SPACE</span>
+          <span class="mode-chip" id="chipIntercept">迎撃 INTERCEPT</span>
+          <span class="threat" id="threatWarn">弾幕接近</span>
+        </div>
+        <div id="wordPanel" class="hidden">
+          <div id="wordLabel"></div>
+          <div id="wordKana"></div>
+          <div id="wordRomaji"><span id="wDone"></span><span id="wNext"></span><span id="wRest"></span></div>
+          <div id="wordMeaning"></div>
+        </div>
+        <div id="hintBar">
+          <span class="hint"><kbd>A-Z</kbd> タイピング</span>
+          <span class="hint"><kbd>SPACE</kbd> 攻撃 / 迎撃 切替</span>
+          <span class="hint"><kbd>TAB</kbd> 目標を次へ</span>
+          <span class="hint"><kbd>ENTER</kbd> オーバードライブ</span>
+          <span class="hint"><kbd>ESC</kbd> ポーズ</span>
+        </div>
+      </div>
+      <div id="centerToast"></div>
+    </div>
+
+    <!-- ===== SCREENS ===== -->
+    <div id="screens">
+
+      <section id="scr-title" class="screen active">
+        <div class="title-logo">
+          <h1>SPACE<span>TYPING</span></h1>
+          <p class="subtitle">弾幕タイピング RPG &mdash; DANMAKU TYPING ODYSSEY</p>
+        </div>
+        <nav class="menu" id="titleMenu"></nav>
+        <div class="pilot-strip" id="pilotStrip"></div>
+        <div class="version">v1.0 &middot; 矢印キー/クリックで選択</div>
+      </section>
+
+      <section id="scr-difficulty" class="screen">
+        <h2 class="scr-title">DIFFICULTY / 難易度選択</h2>
+        <div id="diffList" class="card-list"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-sector" class="screen">
+        <h2 class="scr-title">SECTOR SELECT / 宙域選択</h2>
+        <div id="sectorList" class="card-list"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-hangar" class="screen">
+        <h2 class="scr-title">HANGAR / 格納庫</h2>
+        <div class="hangar-grid">
+          <div class="pane">
+            <h3>PILOT</h3>
+            <div id="pilotStats" class="scroll"></div>
+          </div>
+          <div class="pane">
+            <h3>EQUIPPED</h3>
+            <div id="equipSlots" class="scroll"></div>
+          </div>
+          <div class="pane">
+            <h3>INVENTORY <small id="invCount"></small></h3>
+            <div id="invList" class="scroll"></div>
+          </div>
+          <div class="pane">
+            <h3>DETAIL</h3>
+            <div id="itemDetail"></div>
+          </div>
+        </div>
+        <div class="scr-foot">
+          <button class="btn" id="btnShop">補給ドック (ガチャ / 売却)</button>
+          <button class="btn ghost" data-back>戻る</button>
+        </div>
+      </section>
+
+      <section id="scr-shop" class="screen">
+        <h2 class="scr-title">SUPPLY DOCK / 補給ドック</h2>
+        <div id="shopBody"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-settings" class="screen">
+        <h2 class="scr-title">SETTINGS / 設定</h2>
+        <div id="settingsBody"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-help" class="screen">
+        <h2 class="scr-title">HOW TO PLAY / 遊び方</h2>
+        <div id="helpBody" class="scroll"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-pause" class="screen overlay">
+        <h2 class="scr-title">PAUSED</h2>
+        <nav class="menu" id="pauseMenu"></nav>
+      </section>
+
+      <section id="scr-result" class="screen">
+        <h2 class="scr-title" id="resultTitle">MISSION COMPLETE</h2>
+        <div id="resultBody"></div>
+        <div class="scr-foot"><button class="btn primary" id="btnResultOk">続行</button></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/romaji.js"></script>
+<script src="js/words.js"></script>
+<script src="js/items.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/stages.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
