@@ -124,7 +124,110 @@ ST.Words = (function () {
     ['じゅうりょくとくいてん', '重力特異点', 'gravitational singularity'],
     ['こうじげんきかがく', '高次元幾何学', 'hyperdim geometry'],
     ['そうたいろんてきこうか', '相対論的効果', 'relativistic effect'],
-    ['ちょうだいしつりょうたい', '超大質量体', 'supermassive body']
+    ['ちょうだいしつりょうたい', '超大質量体', 'supermassive body'],
+
+    /* --- 増補: 艦と乗員 --- */
+    ['そうじゅうせき', '操縦席', 'cockpit'], ['かんせいとう', '管制塔', 'control tower'],
+    ['ほきゅうかん', '補給艦', 'supply ship'], ['きゅうめいてい', '救命艇', 'escape pod'],
+    ['しれいかん', '司令官', 'commander'], ['こうかいし', '航海士', 'navigator'],
+    ['そうじゅうし', '操縦士', 'pilot'], ['つうしんし', '通信士', 'comms officer'],
+    ['せんじゅつかん', '戦術官', 'tactical officer'], ['せいびへい', '整備兵', 'mechanic'],
+    ['かんたいしれい', '艦隊司令', 'fleet command'], ['きかんしつ', '機関室', 'engine room'],
+    ['かんきょうせいぎょ', '環境制御', 'life support'], ['ふくごうそうこう', '複合装甲', 'composite armor'],
+    ['たんそうほう', '単装砲', 'single turret'], ['れんそうほう', '連装砲', 'twin turret'],
+    ['しゅほうもん', '主砲門', 'main battery'], ['ふくほうもん', '副砲門', 'secondary battery'],
+    ['ぼうくうけん', '防空圏', 'air defense zone'], ['こうくうぼかん', '航空母艦', 'carrier'],
+
+    /* --- 増補: 現象と観測 --- */
+    ['たいくうほうか', '対空砲火', 'flak'], ['きどうばくげき', '軌道爆撃', 'orbital strike'],
+    ['かんそくえいせい', '観測衛星', 'observation satellite'], ['れいきゃくざい', '冷却材', 'coolant'],
+    ['かそくそうち', '加速装置', 'accelerator'], ['りょうしろ', '量子炉', 'quantum reactor'],
+    ['ちょうりょくば', '張力場', 'tension field'], ['じそくかんり', '磁束管理', 'flux control'],
+    ['くうかんわい', '空間歪', 'spatial distortion'], ['じゅうりょくれんず', '重力レンズ', 'gravitational lens'],
+    ['こうねんたんい', '光年単位', 'light-year scale'], ['せきがいせん', '赤外線', 'infrared'],
+    ['しがいせん', '紫外線', 'ultraviolet'], ['でんじゆうどう', '電磁誘導', 'induction'],
+    ['ねつでんつい', '熱電対', 'thermocouple'], ['こうでんへんかん', '光電変換', 'photoelectric'],
+    ['ちょうでんどうじば', '超電導磁場', 'superconducting field'],
+    ['じきけんかんそく', '磁気圏観測', 'magnetosphere survey'],
+    ['りゅうしかそくき', '粒子加速器', 'particle accelerator'],
+    ['じゅうりょくいどこうぞう', '重力井戸構造', 'gravity well structure'],
+    ['ちょうしんせいざんがい', '超新星残骸', 'supernova remnant'],
+    ['あんこくえねるぎー', '暗黒エネルギー', 'dark energy'],
+    ['じくうきょくりつ', '時空曲率', 'spacetime curvature'],
+    ['りょうしもつれじょうたい', '量子もつれ状態', 'entangled state'],
+    ['たいしょうせいはかい', '対称性破壊', 'symmetry breaking'],
+    ['じげんそうしつげんしょう', '次元喪失現象', 'dimensional loss'],
+    ['こうじげんくうかんこうぞう', '高次元空間構造', 'hyperdimensional structure'],
+    ['ちょうたいしょうせいりろん', '超対称性理論', 'supersymmetry'],
+    ['そうたいろんてきしつりょう', '相対論的質量', 'relativistic mass'],
+    ['じゅうりょくはかんそくき', '重力波観測機', 'gravitational wave detector'],
+
+    /* --- 増補: 戦闘と任務 --- */
+    ['ぜんめつせん', '殲滅戦', 'annihilation'], ['ようげきせん', '要撃戦', 'interception'],
+    ['はさみうち', '挟み撃ち', 'pincer'], ['ゆうどうだん', '誘導弾', 'guided missile'],
+    ['しゃかいせん', '射界線', 'firing line'], ['そうこうへき', '装甲壁', 'armor wall'],
+    ['ぜんしんぼうぎょ', '全身防御', 'full defense'], ['きんきゅうかいひ', '緊急回避', 'emergency evasion'],
+    ['きょうせいちゃっかん', '強制着艦', 'forced landing'], ['ろうじょうせん', '籠城戦', 'siege'],
+    ['きしゅうさくせん', '奇襲作戦', 'surprise attack'], ['ようさいこうりゃく', '要塞攻略', 'fortress assault'],
+    ['はかいこうさく', '破壊工作', 'sabotage'], ['じんちこうちく', '陣地構築', 'fortify'],
+    ['しえんほうげき', '支援砲撃', 'fire support'], ['だっしゅつけいろ', '脱出経路', 'escape route'],
+    ['ぼうえいらいん', '防衛ライン', 'defense line'], ['ぜんぽうけいかい', '前方警戒', 'forward watch'],
+    ['こうほうけいかい', '後方警戒', 'rear watch'], ['さくてきはんい', '索敵範囲', 'search radius'],
+    ['きどうぼうえいもう', '軌道防衛網', 'orbital defense net'],
+    ['たいかんみさいる', '対艦ミサイル', 'anti-ship missile'],
+    ['じどうげいげきしすてむ', '自動迎撃システム', 'auto intercept system'],
+    ['きんきょりせんとう', '近距離戦闘', 'close quarters'],
+    ['ちょうえんきょりそげき', '超遠距離狙撃', 'long range snipe'],
+    ['ぜんほういぼうえい', '全方位防衛', 'omni defense'],
+    ['そうごうかんせいしすてむ', '総合管制システム', 'integrated control'],
+    ['きょうりょくじばはっせい', '強力磁場発生', 'strong field generation'],
+
+    /* --- 増補: 文明と物語 --- */
+    ['こだいいせき', '古代遺跡', 'ancient ruins'], ['いぶんめい', '異文明', 'alien civilization'],
+    ['きょうやく', '協約', 'accord'], ['りゅうぼう', '流亡', 'exile'],
+    ['きかんふのう', '帰還不能', 'point of no return'], ['そうしつかん', '喪失感', 'sense of loss'],
+    ['さいかいのひ', '再会の日', 'day of reunion'], ['やくそくのち', '約束の地', 'promised land'],
+    ['ほしのはて', '星の果て', 'edge of stars'], ['よあけまえ', '夜明け前', 'before dawn'],
+    ['さいごのひかり', '最後の光', 'the last light'], ['とわのしずけさ', '永遠の静けさ', 'eternal silence'],
+    ['きおくのかけら', '記憶の欠片', 'shard of memory'], ['ぼうきゃくのうみ', '忘却の海', 'sea of oblivion'],
+    ['きせきのきかん', '奇跡の帰還', 'miraculous return'],
+    ['えいえんのほうろう', '永遠の放浪', 'eternal wandering'],
+    ['なだれこむひかり', '雪崩れ込む光', 'cascading light'],
+    ['しずかなるはめつ', '静かなる破滅', 'silent ruin'],
+    ['うしなわれたぶんめい', '失われた文明', 'lost civilization'],
+    ['かえらざるこうかいしゃ', '帰らざる航海者', 'the voyager who never returns'],
+
+    /* --- 増補: 文章 --- */
+    ['ぜんきかんしゅつりょくさいだい', '全機関出力最大', 'all engines to maximum'],
+    ['たいきけんとつにゅうようい', '大気圏突入用意', 'prepare for atmospheric entry'],
+    ['しゅりょくほうもんかいほう', '主力砲門開放', 'open the main batteries'],
+    ['ぜんかんたいこうげきかいし', '全艦隊攻撃開始', 'all fleets commence attack'],
+    ['きどうしゅうせいをかいしせよ', '軌道修正を開始せよ', 'begin course correction'],
+    ['はんぶっしつろしんりんかい', '反物質炉心臨界', 'antimatter core critical'],
+    ['じくうだんそうかんそくちゅう', '時空断層観測中', 'observing spacetime fault'],
+    ['しんくうくうかんへだっしゅつ', '真空空間へ脱出', 'eject into vacuum'],
+    ['ちょうこうそくこうかいじゅんび', '超光速航海準備', 'prepare for ftl voyage'],
+    ['せんとうはいちにつけ', '戦闘配置につけ', 'battle stations'],
+    ['そうこうへきをてんかいせよ', '装甲壁を展開せよ', 'deploy the armor wall'],
+    ['めいちゅうりつをさいだいに', '命中率を最大に', 'maximize accuracy'],
+    ['きんきゅうかいひこうどうへ', '緊急回避行動へ', 'evasive maneuvers'],
+    ['ぜんぽうにきょだいはんのう', '前方に巨大反応', 'massive contact ahead'],
+    ['しれいけいとうをふっきゅうせよ', '指令系統を復旧せよ', 'restore the command chain'],
+    ['りょうしつうしんかいせんかいほう', '量子通信回線開放', 'open the quantum channel'],
+    ['ぎんがちゅうしんへとうたつせり', '銀河中心へ到達せり', 'we have reached the core'],
+    ['さいしゅうへいききどうかいし', '最終兵器起動開始', 'final weapon activating'],
+    ['せいめいはんのうそうしつかくにん', '生命反応消失確認', 'life signs lost'],
+    ['じりつせんとうもーどへいこう', '自律戦闘モードへ移行', 'switching to autonomous combat'],
+    ['ぜんそくりょくでりだつせよ', '全速力で離脱せよ', 'withdraw at full speed'],
+    ['くうかんてんいをかんりょうせり', '空間転移を完了せり', 'spatial transfer complete'],
+    ['あんこくぶっしつのうどじょうしょう', '暗黒物質濃度上昇', 'dark matter density rising'],
+    ['ほうかいまでのこりさんじゅうびょう', '崩壊まで残り三十秒', 'thirty seconds to collapse'],
+    ['ぜんいんただちにたいひせよ', '全員直ちに退避せよ', 'all hands evacuate now'],
+    ['このほしにあすはこない', 'この星に明日は来ない', 'no tomorrow for this world'],
+    ['われらはほしのうみをわたる', '我らは星の海を渡る', 'we cross the sea of stars'],
+    ['きかんのしんごうをまちつづける', '帰還の信号を待ち続ける', 'still waiting for the signal'],
+    ['ひかりよりはやくかけぬけろ', '光より速く駆け抜けろ', 'run faster than light'],
+    ['さいごのひとりになるまでたたかえ', '最後の一人になるまで戦え', 'fight to the last']
   ];
 
   var EN = [
@@ -167,19 +270,61 @@ ST.Words = (function () {
     'incomprehensible', 'interdimensional', 'electromagnetism', 'extraterrestrial',
     'indistinguishable', 'characteristically', 'uncharacteristic', 'crystallographic',
     'thermodynamically', 'incompatibilities', 'microarchitecture', 'superconductivity',
-    'photoluminescence', 'interchangeability', 'counterintelligence', 'disproportionately'
+    'photoluminescence', 'interchangeability', 'counterintelligence', 'disproportionately',
+
+    /* --- 増補: 宇宙 --- */
+    'aerobrake', 'lightyear', 'exoplanet', 'terraform', 'meteorite', 'planetary',
+    'spacetime', 'hyperjump', 'starforge', 'starquake', 'cryogenic', 'photonics',
+    'radiative', 'telemetry', 'moonscape', 'deepspace', 'spacewalk', 'starcruise',
+    'astronomer', 'heliosphere', 'interplanet', 'starcluster', 'lunarorbit',
+    'chronometric', 'cosmological', 'electrostatic', 'gravitometer', 'heliocentric',
+    'planetesimal', 'spectrometry', 'thermosphere', 'ultraviolet', 'radiotelescope',
+    'weightlessness', 'nucleosynthesis', 'astrophotography', 'circumnavigation',
+    'electrodynamics', 'instrumentation', 'magnetospheric', 'multidimensional',
+    'observationally', 'radioastronomy', 'spectroscopically', 'thermoregulation',
+
+    /* --- 増補: 技術 --- */
+    'benchmark', 'bitstream', 'callstack', 'codepoint', 'datastore', 'hashtable',
+    'iterators', 'namespace', 'nullcheck', 'overflows', 'prototype', 'recursive',
+    'semaphore', 'vectorize', 'threadsafe', 'typesystem', 'memoization',
+    'bidirectional', 'checkpointing', 'deterministic', 'interpolation',
+    'lexicographic', 'optimization', 'partitioning', 'quantization',
+    'reproducible', 'synchronizing', 'tokenization', 'asynchronously',
+    'containerization', 'internationalize', 'interoperability', 'microcontroller',
+    'parameterization', 'representational', 'serializability', 'synchronization',
+    'transactionality', 'backwardcompatible',
+
+    /* --- 増補: 交信文（スペースも打鍵対象。モード切替は TAB） --- */
+    'warp core online', 'all systems nominal', 'initiate jump sequence',
+    'target lock confirmed', 'hull breach detected', 'shields at maximum',
+    'reactor overload imminent', 'evasive maneuvers engaged',
+    'quantum entanglement relay', 'antimatter containment failure',
+    'gravitational anomaly ahead', 'life support critical',
+    'plotting hyperspace route', 'weapons free authorized',
+    'emergency power rerouted', 'sensor array recalibrated',
+    'self destruct armed', 'galactic core approach',
+    'singularity breach alert', 'final countdown initiated',
+    'navigation lock acquired', 'thermal shielding degraded',
+    'all hands abandon ship', 'we cross the sea of stars',
+    'brace for impact', 'the last light is fading',
+    'hold the line until dawn', 'no signal from the outer fleet',
+    'we are the only ones left', 'set course for the galactic core'
   ];
 
   /* --- 構築: tier ごとにバケット化 --- */
-  var buckets = { ja: [[], [], [], [], []], en: [[], [], [], [], []] };
+  var TIERS = 6;
+  var buckets = { ja: [[], [], [], [], [], []], en: [[], [], [], [], [], []] };
   var allJa = [], allEn = [];
 
+  /* tier5 は文章。打鍵数だけで自動的に振り分けるので、
+     語を足すときに階層を意識する必要はない。 */
   function tierOf(len) {
     if (len <= 5) return 0;
     if (len <= 8) return 1;
     if (len <= 11) return 2;
     if (len <= 15) return 3;
-    return 4;
+    if (len <= 19) return 4;
+    return 5;
   }
 
   function build() {
@@ -198,9 +343,9 @@ ST.Words = (function () {
     }
     /* 空バケットは隣から補填 */
     ['ja', 'en'].forEach(function (k) {
-      for (var t = 0; t < 5; t++) {
+      for (var t = 0; t < TIERS; t++) {
         if (!buckets[k][t].length) {
-          for (var d = 1; d < 5; d++) {
+          for (var d = 1; d < TIERS; d++) {
             if (buckets[k][t - d] && buckets[k][t - d].length) { buckets[k][t] = buckets[k][t - d]; break; }
             if (buckets[k][t + d] && buckets[k][t + d].length) { buckets[k][t] = buckets[k][t + d]; break; }
           }
@@ -218,7 +363,7 @@ ST.Words = (function () {
 
   /* tier: 0..4 / lang: 'ja'|'en'|'mix' */
   function pick(tier, lang) {
-    tier = ST.U.clamp(tier | 0, 0, 4);
+    tier = ST.U.clamp(tier | 0, 0, TIERS - 1);
     var key = lang === 'mix' ? (Math.random() < 0.5 ? 'ja' : 'en') : (lang === 'en' ? 'en' : 'ja');
     var pool = buckets[key][tier];
     if (!pool || !pool.length) pool = buckets[key][0];
@@ -234,7 +379,7 @@ ST.Words = (function () {
   function resetRecent() { recent.length = 0; }
 
   return {
-    build: build, pick: pick, tierOf: tierOf, resetRecent: resetRecent,
+    build: build, pick: pick, tierOf: tierOf, resetRecent: resetRecent, TIERS: TIERS,
     get ja() { return allJa; }, get en() { return allEn; },
     get buckets() { return buckets; }
   };

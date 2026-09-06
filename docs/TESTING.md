@@ -22,7 +22,7 @@ node tools/balance.js clear   # 難易度ごとのクリア率（数分）
 ## 1. 正当性テスト `tools/test.js`
 
 ```bash
-node tools/test.js [all|romaji|play|render|ui|jitter]
+node tools/test.js [all|romaji|play|render|ui|controls|jitter]
 ```
 
 引数なしは `all`。個別に走らせると数秒で終わります。
@@ -32,6 +32,7 @@ node tools/test.js [all|romaji|play|render|ui|jitter]
 | `romaji` | かな→ローマ字の受理判定。`しゅっぱつ` を `shuppatsu`/`syuppatu`/`shixyuppatsu` などで打てるか、逆に IME 同様 `てんのう`←`tennou` を弾くか。単語バンクの階層ごとの語数も検査する |
 | `play` | 各難易度でミッションが例外なく完走するか。撃破・得点・打鍵が成立しているか。セーブの保存/読み直しの一致。装備生成物の健全性 |
 | `render` | canvas 呼び出しの検証。**NaN 座標・不正な色・不正なフォント**を検出する。実ブラウザでは目視しないと気づけない類のバグをここで捕まえる |
+| `controls` | 操作系の回帰。TAB でのモード切替、SHIFT+TAB での目標送り、SPACE が打鍵に使えること、オーバードライブの発動効果と必要量の逓増、ミス硬直の可視化 |
 | `ui` | 画面遷移の回帰。補給ドックでの購入・売却が格納庫へ反映されるか、売却済みアイテムを複製できないか、拡張スロットを選んで装備できるか、スコア記録が難易度をまたいで見えるか、セーブ失敗を検知できるか |
 | `jitter` | 敵の座標が1フレームで飛んでいないか。移動パターンごとに「最大1フレーム移動量 ÷ 平均」を測り、8倍を超えたらワープとみなす |
 
@@ -125,23 +126,25 @@ node tools/balance.js sweep LASER_BASE=4,5,7 8
 | s1/PILOT (LV8 Uncommon) | 16/16 | 99% |
 | s3/PILOT (LV16 Uncommon) | 16/16 | 100% |
 | s4/CADET (LV20 Uncommon) | 16/16 | 100% |
-| s4/ACE (LV24 Rare) | 16/16 | 82% |
-| s6/VETERAN (LV30 Epic — 装備不足) | 8/16 | 46% |
+| s4/ACE (LV24 Rare) | 16/16 | 90% |
+| s6/VETERAN (LV30 Epic — 装備不足) | 7/16 | 45% |
 | s6/VETERAN (LV34 Legendary) | 16/16 | 100% |
-| s8/NIGHTMARE (LV30 Legendary ×4) | 4/16 | 26% |
-| s8/NIGHTMARE (LV30 Legendary ×5) | 9/16 | 56% |
-| s8/NIGHTMARE (LV70 Legendary) | 16/16 | 87% |
-| s8/SINGULARITY (LV30 Legendary ×4) | 2/16 | 10% |
-| s8/SINGULARITY (LV30 Legendary ×5) | 6/16 | 36% |
-| s8/SINGULARITY (LV70 Legendary) | 11/16 | 64% |
+| s8/NIGHTMARE (LV30 Legendary ×5) | 7/16 | 43% |
+| s8/NIGHTMARE (LV70 Legendary) | 15/16 | 80% |
+| s8/SINGULARITY (LV30 Legendary ×5) | 4/16 | 22% |
+| s8/SINGULARITY (LV70 Legendary) | 10/16 | 61% |
+| s8/NIGHTMARE (LV30 Legendary ×4) | 3/16 | 17% |
+| s8/SINGULARITY (LV30 Legendary ×4) | 1/16 | 4% |
+
+各セルは16回の二項試行なので、**±2程度は統計誤差**です。1〜2の差で結論を出さないでください。
 
 設計意図:
 
 - **序盤〜中盤（NOVICE〜ACE）は確実にクリアできる。** ここで死ぬなら調整ミス
-- **VETERAN 以降は装備が要求される。** LV30/Epic で 8/16、LV34/Legendary で 16/16 という差が、
+- **VETERAN 以降は装備が要求される。** LV30/Epic で 7/16、LV34/Legendary で 16/16 という差が、
   ハクスラとしての「farm して戻る」動機になっている
-- **NIGHTMARE は何とかクリアできる水準**（装備4個で 4/16）
-- **SINGULARITY は壁**（装備4個で 2/16）。装備を極めれば手が届く（LV70 で 11/16）
+- **NIGHTMARE は何とかクリアできる水準**（装備4個で 3/16、5個で 7/16）
+- **SINGULARITY は壁**（装備4個で 1/16）。装備を極めれば手が届く（LV70 で 10/16）
 
 立ち回りの差も設計の要です。`node tools/balance.js style` で確認できます。
 

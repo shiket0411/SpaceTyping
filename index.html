@@ -57,9 +57,15 @@
       <div class="hud-bottom">
         <div id="modeBar">
           <span class="mode-chip" id="chipAttack">攻撃 ATTACK</span>
-          <span class="mode-sep">SPACE</span>
+          <span class="mode-sep">TAB</span>
           <span class="mode-chip" id="chipIntercept">迎撃 INTERCEPT</span>
           <span class="threat" id="threatWarn">弾幕接近</span>
+        </div>
+        <div id="missLock" class="hidden">
+          <span class="ml-label">MISS</span>
+          <span class="ml-text">入力ロック</span>
+          <div class="ml-bar"><div id="missLockBar"></div></div>
+          <span id="missLockMs">0.00s</span>
         </div>
         <div id="wordPanel" class="hidden">
           <div id="wordLabel"></div>
@@ -69,8 +75,8 @@
         </div>
         <div id="hintBar">
           <span class="hint"><kbd>A-Z</kbd> タイピング</span>
-          <span class="hint"><kbd>SPACE</kbd> 攻撃 / 迎撃 切替</span>
-          <span class="hint"><kbd>TAB</kbd> 目標を次へ</span>
+          <span class="hint"><kbd>TAB</kbd> 攻撃 / 迎撃 切替</span>
+          <span class="hint"><kbd>SHIFT+TAB</kbd> 目標を次へ</span>
           <span class="hint"><kbd>ENTER</kbd> オーバードライブ</span>
           <span class="hint"><kbd>ESC</kbd> ポーズ</span>
         </div>

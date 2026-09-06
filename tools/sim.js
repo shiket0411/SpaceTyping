@@ -45,12 +45,14 @@ function equip(ST, g) {
  *  rush     : 攻撃モードに固定する
  */
 function decideMode(policy, run, st, key) {
-  if (policy === 'camp') { if (run.mode !== 'intercept') key(' '); return; }
-  if (policy === 'rush') { if (run.mode !== 'attack') key(' '); return; }
+  /* モード切替は TAB。SPACE は英文のスペースを打つ通常キーになった。 */
+  const toggle = () => key('Tab');
+  if (policy === 'camp') { if (run.mode !== 'intercept') toggle(); return; }
+  if (policy === 'rush') { if (run.mode !== 'attack') toggle(); return; }
   const low = run.energy < st.energyMax * 0.3;
   const full = run.energy > st.energyMax * 0.9;
-  if (run.mode === 'attack' && low) key(' ');
-  else if (run.mode === 'intercept' && full) key(' ');
+  if (run.mode === 'attack' && low) toggle();
+  else if (run.mode === 'intercept' && full) toggle();
 }
 
 function wrongChar(valid, rnd) {
@@ -122,7 +124,7 @@ function runMission(o) {
           keys++;
         }
       }
-      if (run.od.gauge >= 100) c.key('Enter');
+      if (run.od.ready) c.key('Enter');
     }
 
     atkFrames += run.mode === 'attack' ? 1 : 0;

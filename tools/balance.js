@@ -43,7 +43,7 @@ const LADDER = [
    ------------------------------------------------------------ */
 function cmdClear(n, miss, overrides) {
   n = n || 16;
-  miss = miss === undefined ? 0 : miss;
+  miss = isFinite(miss) ? miss : 0;   /* 未指定なら 0（調整時の基準） */
   console.log('打鍵 ' + KPS + '/秒 (約' + Math.round(KPS * 12) + 'WPM) / ミス率 ' +
     (miss * 100).toFixed(0) + '% / 各' + n + '回 / シード固定');
   console.log('※ ミス率0%が調整時の基準。README の数値はこの条件で計測している。');

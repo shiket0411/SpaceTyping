@@ -98,6 +98,19 @@ body.no-crt #scanlines{display:none}
 #wordPanel.mode-intercept #wordKana{text-shadow:0 0 14px rgba(89,255,158,.55)}
 #wordPanel.mode-intercept #wNext{background:rgba(89,255,158,.22);border-bottom-color:var(--green)}
 #wordLabel{font-size:9px;letter-spacing:4px;color:var(--txt-dim);margin-bottom:2px}
+#missLock{display:flex;align-items:center;gap:9px;padding:4px 14px;
+  border:1px solid var(--red);background:rgba(60,6,16,.9);
+  box-shadow:0 0 22px rgba(255,45,85,.55);animation:missPop .12s ease-out}
+#missLock .ml-label{font-size:13px;font-weight:700;letter-spacing:3px;color:var(--red)}
+#missLock .ml-text{font-size:10px;letter-spacing:2px;color:#ffb3bd}
+#missLock .ml-bar{width:150px;height:6px;background:rgba(0,0,0,.6);
+  border:1px solid rgba(255,77,94,.5);overflow:hidden}
+#missLockBar{height:100%;background:linear-gradient(90deg,#ff2d55,#ff8a5c);
+  transform-origin:left center}
+#missLockMs{font-size:10px;color:#ffb3bd;width:38px;text-align:right}
+@keyframes missPop{from{transform:scale(.86);opacity:.4}to{transform:scale(1);opacity:1}}
+/* 硬直中は単語パネルを沈めて「今は打っても無駄」と分かるようにする */
+#wordPanel.locked{opacity:.35;filter:grayscale(.7)}
 #wordPanel{text-align:center;background:linear-gradient(180deg,rgba(4,10,24,0),rgba(4,10,24,.9));
   padding:8px 26px 6px;border-top:1px solid rgba(77,243,255,.25);min-width:420px}
 #wordKana{font-size:26px;letter-spacing:5px;color:#fff;text-shadow:0 0 14px rgba(77,243,255,.55)}

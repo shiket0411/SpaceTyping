@@ -168,7 +168,7 @@ ST.Game = (function () {
       threat: 0,
       od: { gauge: 0, active: 0, ready: false },
       grace: 0,                  /* オーバーキル後の入力吸収 */
-      stun: 0,
+      stun: 0, stunMax: 1,
       chainCount: 0, precisionStack: 0,
       s: {
         keys: 0, correct: 0, miss: 0, kills: 0, intercepts: 0,
@@ -223,13 +223,17 @@ ST.Game = (function () {
   /* ============================================================
      敵スポーン
      ============================================================ */
+  /* 雑魚の単語階層。tier5(文章) は語長ぶん撃破に時間がかかり圧力の収支を崩すので、
+     雑魚には割り当てない。文章はボス専用にしてある。 */
   function wordTierFor(sector, typeDef, diff) {
     var t = Math.round(sector.tierBase * 0.5 + typeDef.tier * 0.7) + diff.tierAdd;
     return U.clamp(t, 0, 4);
   }
 
   function assignWord(e) {
-    var tier = e.boss ? U.clamp(3 + run.diff.tierAdd, 2, 4) : wordTierFor(run.sector, e.def, run.diff);
+    /* ボスは高難易度で文章(tier5)まで使う。ボス戦の長さは所要打鍵で決まり
+       語長には依存しないので、長文を混ぜても戦闘時間は変わらない。 */
+    var tier = e.boss ? U.clamp(3 + run.diff.tierAdd, 2, 5) : wordTierFor(run.sector, e.def, run.diff);
     var w = ST.Words.pick(tier, ST.Save.d.settings.lang);
     e.word = w;
     e.matcher = ST.Romaji.create(w);
@@ -448,14 +452,12 @@ ST.Game = (function () {
     }
     if (state !== 'playing') return;
 
-    if (k === ' ' || k === 'Spacebar') {
-      ev.preventDefault();
-      setMode(run.mode === 'attack' ? 'intercept' : 'attack');
-      return;
-    }
     if (k === 'Tab') {
       ev.preventDefault();
-      skipTarget();
+      /* TAB = 攻撃/迎撃の切替、Shift+TAB = 目標を次へ。
+         SPACE は英文のスペースを打つために打鍵側へ開放している。 */
+      if (ev.shiftKey) skipTarget();
+      else setMode(run.mode === 'attack' ? 'intercept' : 'attack');
       return;
     }
     if (k === 'Enter') {
@@ -463,9 +465,10 @@ ST.Game = (function () {
       tryOverdrive();
       return;
     }
+    if (k === 'Spacebar') k = ' ';        /* 旧ブラウザ対策 */
     if (k.length !== 1) return;
     var ch = k.toLowerCase();
-    if (!/[a-z0-9\-,.\/']/.test(ch)) return;
+    if (!/[a-z0-9\-,.\/' ]/.test(ch)) return;
     ev.preventDefault();
     handleChar(ch);
   }
@@ -537,7 +540,7 @@ ST.Game = (function () {
       r.player.shield = Math.min(r.player.shieldMax,
         r.player.shield + 0.2 + st.shieldRegen * 0.009);
     }
-    r.od.gauge = Math.min(100, r.od.gauge + 0.55 * (1 + st.odGain / 100));
+    addOd(0.55 * (1 + st.odGain / 100));
     r.s.score += Math.round(6 * (1 + r.s.combo * 0.01) * run.diff.score * (1 + st.scoreMul / 100));
   }
 
@@ -586,7 +589,7 @@ ST.Game = (function () {
     /* 単語を打ち切ったら雑魚は必ず落ちる。ボスだけが複数単語を要求する。 */
     if (!e.boss) fin = Math.max(fin, e.hp);
     damageEnemy(e, fin, false, true);
-    r.od.gauge = Math.min(100, r.od.gauge + 3.5 * (1 + st.odGain / 100));
+    addOd(3.5 * (1 + st.odGain / 100));
     r.s.score += Math.round(45 * run.diff.score * (1 + st.scoreMul / 100));
 
     /* 残響共鳴: 周囲へ波及 */
@@ -614,6 +617,7 @@ ST.Game = (function () {
     r.precisionStack = 0;
     r.chainCount = 0;
     r.stun = 0.26 * run.diff.graceMul * (1 - st.grace / 100);
+    r.stunMax = r.stun;
     ST.Audio.play('miss');
     flash.t = 0.14; flash.c = '#ff4d5e'; flash.a = 0.16;
     /* 高難易度ではミスで迎撃エネルギーも削られる（ロック解除の代替ペナルティ） */
@@ -666,8 +670,8 @@ ST.Game = (function () {
     r.s.score += sc;
     floaters.push({ x: e.x, y: e.y - 24, vy: -34, t: 1.0, txt: '+' + U.fmt(sc), c: '#59ff9e', sz: 15 });
 
-    r.od.gauge = Math.min(100, r.od.gauge + (isBoss ? 40 : 4) * (1 + st.odGain / 100));
-    if (st.uniques.harvest && Math.random() < 0.3) r.od.gauge = Math.min(100, r.od.gauge + 12);
+    addOd((isBoss ? 40 : 4) * (1 + st.odGain / 100));
+    if (st.uniques.harvest && Math.random() < 0.3) addOd(12);
     if (st.uniques.vampire) healPlayer(r.player.maxHp * 0.015);
 
     /* 経験値 */
@@ -759,7 +763,7 @@ ST.Game = (function () {
     tracers.push({ x1: r.player.x, y1: r.player.y - 14, x2: bx, y2: by, t: 0.12, c: col });
     rings.push({ x: bx, y: by, r0: blast * 0.25, r1: blast, t: 0.26, life: 0.26, c: col });
     ST.Audio.play('intercept');
-    r.od.gauge = Math.min(100, r.od.gauge + (0.8 + n * 0.35) * (1 + st.odGain / 100));
+    addOd((0.8 + n * 0.35) * (1 + st.odGain / 100));
     r.s.score += Math.round((8 + n * 6) * run.diff.score * (1 + st.scoreMul / 100));
     r.player.shield = Math.min(r.player.shieldMax, r.player.shield + 0.6 + n * 0.4);
     if (n > 1) floaters.push({ x: bx, y: by, vy: -40, t: 0.6, txt: 'x' + (n + 1), c: '#4df3ff', sz: 13 });
@@ -881,8 +885,10 @@ ST.Game = (function () {
   var INTERCEPT_RANGE = 210;
   var IC_DELAY = 0.32;         /* 迎撃の発射間隔(秒)。約3発/秒が上限で、密集弾は撃ち切れない */
   var OVERLOAD_RECOVER = 0.35; /* 枯渇からの復帰に必要なエネルギー割合 */
+  var OD_COST_BASE = 100;      /* 宙域1 / 難易度係数1.0 でのOD必要量 */
+  var OD_COST_SECTOR = 0.18;   /* 宙域が1つ進むごとの増加率 */
   var PRESSURE_TIME = 40;      /* 無為に過ごすと圧力が満ちるまでの秒数 */
-  var PRESSURE_KILL = 0.07;    /* 撃破1体で下がる圧力。撃破し続ければ押し返せる */
+  var PRESSURE_KILL = 0.12;    /* 撃破1体で下がる圧力。撃破し続ければ押し返せる */
   var PRESSURE_WORD = 0.012;   /* 攻撃モードで1単語打ち切るごとに下がる圧力 */
   var PRESSURE_BOSS = 0.05;    /* ボス戦は撃破が発生しないので、完撃で大きめに戻す */
   var LASER_CHARGE = 0.7;      /* 照射までの予告時間 */
@@ -914,17 +920,47 @@ ST.Game = (function () {
   /* ============================================================
      オーバードライブ
      ============================================================ */
+  /* OD の必要量は宙域と難易度で決まる。ミッション中は一定なので、
+     「この面では何回撃てるか」を最初から見積もれる。
+     エンドレスは宙域番号を持たないので odSector を代わりに使う。 */
+  function odCost() {
+    var s = run.sector;
+    var n = s.odSector || s.num;
+    return Math.round(OD_COST_BASE * (1 + (n - 1) * OD_COST_SECTOR) * (run.diff.odCost || 1));
+  }
+  function addOd(v) {
+    run.od.gauge = Math.min(odCost(), run.od.gauge + v);
+  }
+
   function tryOverdrive() {
-    var r = run;
+    var r = run, st = r.stats;
     if (r.od.active > 0) return;
-    if (r.od.gauge < 100) { ST.Audio.play('deny'); return; }
+    if (r.od.gauge < odCost()) { ST.Audio.play('deny'); return; }
     r.od.gauge = 0;
-    r.od.active = 6 * (1 + r.stats.odDuration / 100);
+    r.od.active = 6 * (1 + st.odDuration / 100);
+
+    /* 発動時に戦況を一度リセットする切り札 */
+    var cleared = clearBulletsNear(W / 2, H / 2, 4000, true);   /* 画面上の敵弾を全消去 */
+    for (var i = r.lasers.length - 1; i >= 0; i--) {            /* 予告中のレーザーも消す */
+      if (!r.lasers[i].fired) r.lasers.splice(i, 1);
+    }
+    r.pressure = r.pressure / 2;                                /* 戦域圧力を半減 */
+    r.energy = st.energyMax;                                    /* 迎撃エネルギー全快 */
+    r.overload = false;
+    r.player.shield = r.player.shieldMax;                       /* 障壁全快 */
+
     ST.Audio.play('overdrive');
     toast('OVERDRIVE', '#ff4dd2');
-    shakeIt(0.5, 14);
-    flash.t = 0.4; flash.c = '#ff4dd2'; flash.a = 0.3;
-    clearBulletsNear(r.player.x, r.player.y, 260, true);
+    shakeIt(0.6, 18);
+    flash.t = 0.5; flash.c = '#ff4dd2'; flash.a = 0.45;
+    spawnParticles(r.player.x, r.player.y, 60, '#ff4dd2', 420);
+    rings.push({ x: r.player.x, y: r.player.y, r0: 40, r1: 900, t: 0.5, life: 0.5, c: '#ff4dd2' });
+    if (cleared > 0) {
+      floaters.push({
+        x: r.player.x, y: r.player.y - 60, vy: -40, t: 1.1,
+        txt: '弾幕消滅 x' + cleared, c: '#ff4dd2', sz: 16
+      });
+    }
   }
 
   /* ============================================================
@@ -1003,7 +1039,7 @@ ST.Game = (function () {
       r.od.active -= dt;
       if (r.od.active <= 0) { r.od.active = 0; toast('OD END', '#6f8bab'); }
     }
-    r.od.ready = r.od.gauge >= 100;
+    r.od.ready = r.od.gauge >= odCost();
 
     /* HP自己修復 */
     if (st.hpRegen > 0) healPlayer(st.hpRegen * dt);
@@ -1531,8 +1567,13 @@ ST.Game = (function () {
     }
     /* 硬直 */
     if (r.stun > 0) {
-      ctx.fillStyle = 'rgba(255,45,85,' + (r.stun * 0.25) + ')';
+      var sa = r.stun / Math.max(0.01, r.stunMax);
+      ctx.fillStyle = 'rgba(255,45,85,' + (0.05 + sa * 0.16) + ')';
       ctx.fillRect(0, 0, W, H);
+      /* 画面端に枠を出して、視線がどこにあっても硬直に気づけるようにする */
+      ctx.strokeStyle = 'rgba(255,45,85,' + (0.3 + sa * 0.5) + ')';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(3, 3, W - 6, H - 6);
     }
     /* ヒットフラッシュ */
     if (flash.t > 0) {
@@ -1575,10 +1616,24 @@ ST.Game = (function () {
     setBar('hpFill', p.hp / p.maxHp);
     setBar('shFill', p.shield / Math.max(1, p.shieldMax));
     setBar('enFill', r.energy / Math.max(1, r.stats.energyMax));
-    setBar('odFill', r.od.gauge / 100);
-    hudEl.classList.toggle('od-ready', r.od.gauge >= 100);
+    var oc = odCost();
+    setBar('odFill', r.od.gauge / oc);
+    hudEl.classList.toggle('od-ready', r.od.gauge >= oc);
     hudEl.classList.toggle('en-low', r.energy < r.stats.interceptCost * 3);
     hudEl.classList.toggle('en-out', r.overload);
+
+    /* ミス硬直の可視化。残り時間は毎フレーム更新しないと一瞬で消えて見えない。 */
+    var ml = $('missLock');
+    if (r.stun > 0) {
+      ml.classList.remove('hidden');
+      setBar('missLockBar', r.stun / Math.max(0.01, r.stunMax));
+      var ms = $('missLockMs');
+      if (ms) ms.textContent = r.stun.toFixed(2) + 's';
+      $('wordPanel').classList.add('locked');
+    } else if (!ml.classList.contains('hidden')) {
+      ml.classList.add('hidden');
+      $('wordPanel').classList.remove('locked');
+    }
 
     hudT -= 1;
     if (hudT > 0 && !force) return;
@@ -1592,7 +1647,9 @@ ST.Game = (function () {
     var tw = $('threatWarn');
     setTxt('threatWarn', r.overload ? '迎撃系ダウン' : '弾幕接近');
     tw.classList.toggle('on', r.overload || r.threat >= 3);
-    setTxt('odText', r.od.active > 0 ? 'ACTIVE ' + r.od.active.toFixed(1) + 's' : Math.floor(r.od.gauge) + '%');
+    setTxt('odText', r.od.active > 0
+      ? 'ACTIVE ' + r.od.active.toFixed(1) + 's'
+      : Math.floor(r.od.gauge) + ' / ' + odCost());
     setBar('prFill', r.pressure);
     setTxt('pressurePct', Math.round(r.pressure * 100) + '%');
     hudEl.classList.toggle('pr-high', r.pressure >= 0.6);

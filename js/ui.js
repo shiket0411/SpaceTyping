@@ -73,6 +73,8 @@ ST.UI = (function () {
       if (!items.length) return;
       ev.preventDefault();
       if (items[sel]) items[sel].click();
+    } else if (ev.key === 'Tab') {
+      ev.preventDefault();                     /* 画面表示中のフォーカス移動を止める */
     } else if (ev.key === 'Escape') {
       if (cur === 'scr-pause') return;         /* game.js が処理 */
       if (cur === 'scr-title' || cur === 'scr-result') return;
@@ -611,7 +613,7 @@ ST.UI = (function () {
       '<h4>基本ルール</h4>',
       '<p>敵は単語を背負って飛来し、同時に<em>弾幕</em>を撒きます。単語を打ち切って撃墜しつつ、迫る弾は<em>迎撃エネルギー</em>で自動的に叩き落とします。</p>',
       '<h4>2つのモード</h4>',
-      '<p><span class="kbig">SPACE</span> で切り替えます。打鍵の行き先はモードだけで決まるので、狙った相手を外すことはありません。</p>',
+      '<p><span class="kbig">TAB</span> で切り替えます。打鍵の行き先はモードだけで決まるので、狙った相手を外すことはありません。</p>',
       '<p><em>攻撃モード</em> &mdash; 打鍵は目標の敵だけに入ります。1打ごとにダメージ、打ち切ると<em>完撃</em>で確実に撃破。ただしエネルギーは充填されません。</p>',
       '<p><em>迎撃モード</em> &mdash; 敵とは無関係のワードが出ます。それを打つとエネルギーが貯まりますが、その間ダメージは出せません。</p>',
       '<h4>迎撃エネルギー</h4>',
@@ -638,7 +640,7 @@ ST.UI = (function () {
       'ENGYバーが赤く点滅したら切替の合図。</p>',
       '<h4>目標の順番</h4>',
       '<p>敵には出現順に番号が振られ、<em>1番が自動的に目標</em>になります。撃破すれば次へ自動で進みます。',
-      '倒しにくい敵を後回しにしたいときは <span class="kbig">TAB</span> で最後尾に回せます。</p>',
+      '倒しにくい敵を後回しにしたいときは <span class="kbig">SHIFT+TAB</span> で最後尾に回せます。</p>',
       '<h4>オーバードライブ</h4>',
       '<p>正確な打鍵と撃破でODゲージが溜まります。満タンで <span class="kbig">ENTER</span>。敵弾が減速し、ダメージ2倍、',
       '自機周辺の弾を<em>エネルギーを消費せず</em>薙ぎ払います。</p>',
@@ -646,8 +648,9 @@ ST.UI = (function () {
       '<p>撃破で経験値と装備を入手。<em>迎撃容量・充填速度・迎撃燃費・迎撃爆風</em>を伸ばすほど攻撃モードに留まれる時間が延び、',
       '<em>砲撃力・完撃倍率</em>を伸ばすほど1単語あたりの火力が上がります。EPIC以上には特殊効果が宿ります。</p>',
       '<h4>操作一覧</h4>',
-      '<p><span class="kbig">A-Z</span> タイピング &nbsp; <span class="kbig">SPACE</span> 攻撃/迎撃 切替 &nbsp; ',
-      '<span class="kbig">TAB</span> 目標を次へ &nbsp; <span class="kbig">ENTER</span> オーバードライブ &nbsp; <span class="kbig">ESC</span> ポーズ</p>',
+      '<p><span class="kbig">A-Z</span> と <span class="kbig">SPACE</span> タイピング &nbsp; ',
+      '<span class="kbig">TAB</span> 攻撃/迎撃 切替 &nbsp; <span class="kbig">SHIFT+TAB</span> 目標を次へ &nbsp; ',
+      '<span class="kbig">ENTER</span> オーバードライブ &nbsp; <span class="kbig">ESC</span> ポーズ</p>',
       '<h4>難易度</h4>',
       '<p>NOVICE から SINGULARITY まで7段階。上位ほど弾速・弾数が上がり迎撃の消費が激しくなります。',
       'VETERAN 以上は<em>ミスで迎撃エネルギーも減少</em>します。その分、経験値と入手率が大きく伸びます。</p>'

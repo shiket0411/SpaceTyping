@@ -227,12 +227,11 @@ function testRender() {
     for (let f = 0; f < 3600; f++) {
       if (ST.Game.state === 'ending') break;
       if (f % 10 === 0 && ST.Game.state === 'playing') {
-        if (c.Math.random() < 0.05) c.key(' ');
-        if (c.Math.random() < 0.02) c.key('Tab');
+        if (c.Math.random() < 0.05) c.key('Tab');   /* モード切替 */
         const m = run.mode === 'intercept' ? run.ic.matcher
           : (run.target && !run.target.dead ? run.target.matcher : null);
         if (m) { const fc = m.firstChars(); if (fc.length) c.key(c.Math.random() < 0.1 ? 'q' : fc[0]); }
-        if (run.od.gauge >= 100) c.key('Enter');
+        if (run.od.ready) c.key('Enter');
       }
       run.player.hp = run.player.maxHp;
       t += 1000 / 60; c._t = t;
@@ -377,6 +376,148 @@ function testUI() {
 }
 
 /* ============================================================
+   4.5 操作系 / オーバードライブ
+   ============================================================ */
+function testControls() {
+  const { equip } = require('./sim');
+  const setup = (seed, sector, diff) => {
+    const c = boot({ seed: seed });
+    const ST = c.ST;
+    equip(ST, { level: 40, ilvl: 40, rarity: 'epic' });
+    ST.Game.start(sector || 's4', diff || 'ace');
+    const run = ST.Game.run;
+    let t = 0;
+    const step = (n) => {
+      for (let i = 0; i < (n || 1); i++) {
+        run.player.hp = run.player.maxHp;
+        t += 1000 / 60; c._t = t;
+        c._takeRaf().forEach(cb => cb(t));
+      }
+    };
+    step(30);
+    return { c, ST, run, step };
+  };
+
+  head('[操作] TAB でモード切替 / SHIFT+TAB で目標送り');
+  {
+    const { c, run, step } = setup(70);
+    const m0 = run.mode;
+    c.key('Tab');
+    ok('TAB でモードが変わる', run.mode !== m0, m0 + ' -> ' + run.mode);
+    c.key('Tab');
+    ok('TAB で元に戻る', run.mode === m0);
+    step(120);
+    const before = run.target;
+    c.fire('keydown', { key: 'Tab', shiftKey: true, repeat: false, preventDefault() {}, stopPropagation() {} });
+    ok('SHIFT+TAB で目標が変わる', run.enemies.length < 2 || run.target !== before);
+  }
+
+  head('[操作] SPACE が打鍵に使えるか（英文のスペース）');
+  {
+    const { c, ST, run, step } = setup(71);
+    run.mode = 'intercept';
+    run.ic.word = { text: 'warp core online' };
+    run.ic.matcher = ST.Romaji.create(run.ic.word);
+    run.energy = 0;
+    let missed = 0;
+    for (const ch of 'warp core online') {
+      const before = run.ic.matcher.count;
+      c.key(ch);
+      if (run.ic.matcher === null) break;
+    }
+    ok('スペース入りの英文を打ち切れる', run.ic.word.text !== 'warp core online', '未完了');
+    ok('スペースでも充填される', run.energy > 0, run.energy);
+    const m0 = run.mode;
+    c.key(' ');
+    ok('SPACE でモードが変わらない', run.mode === m0);
+  }
+  {
+    const ST = boot({ seed: 72 }).ST;
+    const bad = ST.Words.en.filter(w => !/^[a-z0-9\-,.\/' ]+$/.test(w.text));
+    ok('英単語が全て打鍵可能な文字だけ', bad.length === 0, bad.slice(0, 3).join(','));
+    ok('スペース入りの英文が登録されている', ST.Words.en.some(w => w.text.indexOf(' ') >= 0));
+  }
+
+  head('[OD] 発動効果と必要量の逓増');
+  {
+    const { c, run, step } = setup(73, 's5', 'nightmare');
+    /* 迎撃を止めて弾を溜める */
+    run.energy = 0; run.overload = true;
+    step(600);
+    run.pressure = 0.9;
+    run.player.shield = 0;
+    run.od.gauge = 1e9;
+    c.key('Enter');
+    ok('発動する', run.od.active > 0, run.od.active);
+    /* 軽減量は調整対象なので「下がること」だけを見る */
+    ok('戦域圧力が下がる', run.pressure < 0.9, run.pressure);
+    ok('迎撃エネルギーが全快する', run.energy === run.stats.energyMax);
+    ok('オーバーロードが解除される', run.overload === false);
+    ok('障壁が全快する', run.player.shield === run.player.shieldMax);
+    ok('予告中のレーザーが消える', run.lasers.filter(L => !L.fired).length === 0);
+    step(1);
+    ok('ゲージを消費する', run.od.gauge === 0, run.od.gauge);
+  }
+  {
+    /* 必要量は宙域と難易度で決まり、ミッション中（ウェーブが進んでも）一定 */
+    const { c, run, step } = setup(74, 's5', 'nightmare');
+    const readCost = () => {
+      run.od.gauge = 0; step(10);
+      return parseInt(String(c.document.getElementById('odText').textContent).split('/')[1], 10);
+    };
+    const base = readCost();
+    let constant = true;
+    for (let w = 1; w < 6; w++) { run.waveIdx = w; if (readCost() !== base) constant = false; }
+    ok('ウェーブが進んでも必要量は変わらない', constant, base);
+    run.waveIdx = 0;
+    run.od.gauge = base - 1; step(2);
+    ok('必要量未満では発動不可', run.od.ready === false);
+    run.od.gauge = base; step(2);
+    ok('必要量ちょうどで発動可 (' + base + ')', run.od.ready === true);
+  }
+  {
+    /* 宙域が進むほど / 難易度が上がるほど必要量が増える */
+    const readCost = (sector, diff) => {
+      const { c, run, step } = setup(76, sector, diff);
+      run.od.gauge = 0; step(10);
+      return parseInt(String(c.document.getElementById('odText').textContent).split('/')[1], 10);
+    };
+    const bySector = ['s1', 's3', 's5', 's8'].map(s => readCost(s, 'pilot'));
+    let up = true;
+    for (let i = 1; i < bySector.length; i++) if (bySector[i] <= bySector[i - 1]) up = false;
+    ok('宙域が進むほど必要量が増える', up, bySector.join(' / '));
+
+    const byDiff = ['novice', 'pilot', 'veteran', 'singularity'].map(d => readCost('s5', d));
+    let up2 = true;
+    for (let i = 1; i < byDiff.length; i++) if (byDiff[i] <= byDiff[i - 1]) up2 = false;
+    ok('難易度が上がるほど必要量が増える', up2, byDiff.join(' / '));
+
+    ok('エンドレスでも必要量が算出される', readCost('endless', 'pilot') > 0);
+  }
+
+  head('[操作] ミス硬直が可視化されるか');
+  {
+    const { c, run, step } = setup(75);
+    ok('初期状態では表示されない', c.document.getElementById('missLock').classList.contains('hidden'));
+    /* 敵が出るまで待ってから確実にミスさせる */
+    run.mode = 'attack';
+    for (let i = 0; i < 60 && !run.target; i++) step(10);
+    if (run.target) {
+      const fc = run.target.matcher.firstChars();
+      const wrong = 'abcdefghijklmnopqrstuvwxyz'.split('').find(ch => fc.indexOf(ch) < 0);
+      c.key(wrong);
+      step(1);
+      ok('ミスで硬直インジケータが出る', !c.document.getElementById('missLock').classList.contains('hidden'));
+      ok('残り時間が表示される', /^[0-9.]+s$/.test(c.document.getElementById('missLockMs').textContent),
+        c.document.getElementById('missLockMs').textContent);
+      ok('単語パネルが沈む', c.document.getElementById('wordPanel').classList.contains('locked'));
+      step(60);
+      ok('硬直が明けると消える', c.document.getElementById('missLock').classList.contains('hidden'));
+    } else ok('目標が存在する', false);
+  }
+}
+
+/* ============================================================
    5. 敵の移動が1フレームで飛んでいないか
    ============================================================ */
 function testJitter() {
@@ -447,7 +588,7 @@ function testJitter() {
 /* ============================================================
    実行
    ============================================================ */
-const SUITES = { romaji: testRomaji, play: testPlay, render: testRender, ui: testUI, jitter: testJitter };
+const SUITES = { romaji: testRomaji, play: testPlay, render: testRender, ui: testUI, controls: testControls, jitter: testJitter };
 const arg = (process.argv[2] || 'all').toLowerCase();
 const list = arg === 'all' ? Object.keys(SUITES) : [arg];
 
