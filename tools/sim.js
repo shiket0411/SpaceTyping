@@ -2,7 +2,7 @@
    SpaceTyping シミュレーション補助
 
    仮想プレイヤーにミッションを走らせて結果を集計する。
-   打鍵速度は「1秒あたりの打鍵数」で指定する（WPM = 打鍵数 x 12 が目安）。
+   打鍵速度は「1秒あたりの打鍵数」で指定する。ゲーム内の速度表示もこの単位。
    ============================================================ */
 'use strict';
 const { boot } = require('./harness');
@@ -70,7 +70,7 @@ function wrongChar(valid, rnd) {
  * @param {object} o
  *   sector, diff        : 宙域ID / 難易度ID
  *   level, ilvl, rarity : 装備条件
- *   kps                 : 1秒あたりの打鍵数（既定 5.75 ≒ 69WPM）
+ *   kps                 : 1秒あたりの打鍵数（既定 5.75）
  *   policy              : 'balanced' | 'camp' | 'rush'
  *   missRate            : ミス率（既定 0.05）
  *   maxSeconds          : 打ち切り秒数（既定 700）

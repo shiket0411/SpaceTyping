@@ -110,7 +110,7 @@ function testPlay() {
   d.inventory.push(a.ST.Items.generate(40, { rarity: 'mythic' }));
   d.equipped.weapon = a.ST.Items.generate(40, { slot: 'weapon', rarity: 'legendary' });
   d.progress.clearedSectors.s1 = 3;
-  d.records['s1|pilot'] = { score: 12345, rank: 'A', acc: 96, wpm: 70, wave: 6, cleared: true };
+  d.records['s1|pilot'] = { score: 12345, rank: 'A', acc: 96, kps: 5.8, wave: 6, cleared: true };
   a.ST.Save.save();
   const raw = a._store['spacetyping.save.v1'];
   const b = build({ seed: 1 });
@@ -334,9 +334,9 @@ function testUI() {
   {
     const { ST, d, $ } = setup(15);
     ST.Sectors.list.forEach(s => { d.progress.clearedSectors[s.id] = 7; });
-    d.records['s1|novice'] = { score: 5467, rank: 'B', acc: 90, wpm: 40, wave: 6, cleared: true };
-    d.records['s1|pilot'] = { score: 10079, rank: 'A', acc: 95, wpm: 60, wave: 6, cleared: true };
-    d.records['s1|ace'] = { score: 31047, rank: 'S', acc: 97, wpm: 80, wave: 6, cleared: true };
+    d.records['s1|novice'] = { score: 5467, rank: 'B', acc: 90, kps: 3.3, wave: 6, cleared: true };
+    d.records['s1|pilot'] = { score: 10079, rank: 'A', acc: 95, kps: 5.0, wave: 6, cleared: true };
+    d.records['s1|ace'] = { score: 31047, rank: 'S', acc: 97, kps: 6.7, wave: 6, cleared: true };
     ST.UI.show('scr-difficulty', true);
     $('diffList')._children[2].onclick();               /* PILOT */
     const html = $('sectorList')._children[0].innerHTML;
@@ -514,6 +514,120 @@ function testControls() {
       step(60);
       ok('硬直が明けると消える', c.document.getElementById('missLock').classList.contains('hidden'));
     } else ok('目標が存在する', false);
+  }
+
+  head('[OD] 迎撃ではゲージが溜まらない');
+  {
+    const { c, ST, run, step } = setup(77, 's5', 'nightmare');
+    /* 弾が湧くまで進めてから、迎撃だけを起こす（打鍵は一切しない） */
+    step(600);
+    run.mode = 'intercept';
+    run.energy = run.stats.energyMax;
+    const before = run.od.gauge;
+    const ic0 = run.s.intercepts;
+    for (let i = 0; i < 240 && run.s.intercepts - ic0 < 5; i++) {
+      run.energy = run.stats.energyMax;   /* 枯渇で迎撃が止まらないように */
+      step(1);
+    }
+    ok('迎撃が発生している', run.s.intercepts - ic0 >= 5, run.s.intercepts - ic0);
+    ok('迎撃してもゲージが増えない', run.od.gauge === before, before + ' -> ' + run.od.gauge);
+  }
+  {
+    /* 対照: 攻撃側では従来どおり溜まる */
+    const { c, run, step } = setup(78, 's5', 'nightmare');
+    run.mode = 'attack';
+    for (let i = 0; i < 60 && !run.target; i++) step(10);
+    const before = run.od.gauge;
+    if (run.target) c.key(run.target.matcher.firstChars()[0]);
+    ok('攻撃の正打ではゲージが増える', run.od.gauge > before, before + ' -> ' + run.od.gauge);
+  }
+
+  head('[ミス] 難易度でペナルティが重くなる');
+  {
+    /* 硬直秒とエネルギー減の両方が graceMul で効く。装備差を消すため素の値で比較する */
+    const miss = (diff) => {
+      const { c, ST, run, step } = setup(79, 's4', diff);
+      run.stats.grace = 0;
+      run.mode = 'attack';
+      for (let i = 0; i < 60 && !run.target; i++) step(10);
+      if (!run.target) return null;
+      run.energy = run.stats.energyMax;
+      const e0 = run.energy;
+      const fc = run.target.matcher.firstChars();
+      c.key('abcdefghijklmnopqrstuvwxyz'.split('').find(ch => fc.indexOf(ch) < 0));
+      return { stun: run.stun, energyLost: e0 - run.energy, cost: run.stats.interceptCost };
+    };
+    const ids = ['novice', 'pilot', 'ace', 'veteran', 'nightmare', 'singularity'];
+    const rows = ids.map(miss);
+    ok('全難易度でミスを再現できた', rows.every(r => r), rows.map((r, i) => r ? '' : ids[i]).join(''));
+    if (rows.every(r => r)) {
+      let up = true;
+      for (let i = 1; i < rows.length; i++) if (rows[i].stun <= rows[i - 1].stun) up = false;
+      ok('硬直が難易度とともに単調に伸びる', up, rows.map(r => r.stun.toFixed(2)).join(' / '));
+      ok('SINGULARITY の硬直が0.7秒を超える', rows[5].stun > 0.7, rows[5].stun.toFixed(3));
+      ok('lockDrop 未満はエネルギーが減らない',
+        rows[0].energyLost === 0 && rows[1].energyLost === 0 && rows[2].energyLost === 0,
+        rows.slice(0, 3).map(r => r.energyLost).join(' / '));
+      ok('VETERAN 以上はエネルギーが減る',
+        rows[3].energyLost > 0 && rows[4].energyLost > 0 && rows[5].energyLost > 0);
+      ok('エネルギー減が迎撃1発分より重い',
+        rows[3].energyLost > rows[3].cost && rows[5].energyLost > rows[5].cost * 3,
+        rows[5].energyLost.toFixed(1) + ' vs cost ' + rows[5].cost.toFixed(1));
+    }
+  }
+
+  head('[速度] 平均打鍵/秒 で表示・記録されるか');
+  {
+    const { c, ST, run, step } = setup(80);
+    run.s.correct = 120;
+    run.s.elapsed = 20;         /* 6.0 打/秒 */
+    step(10);
+    const shown = c.document.getElementById('kpsVal').textContent;
+    ok('HUD が小数1桁で出す', shown === '6.0', shown);
+    const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
+    ok('HUD から WPM 要素が消えている', html.indexOf('wpmVal') < 0);
+    ok('HUD に打/秒 の見出しがある', html.indexOf('kpsVal') >= 0 && html.indexOf('打/秒') >= 0);
+
+  }
+  {
+    /* リザルトと記録。setup の step は毎フレームHPを戻すので素のフレーム送りで撃沈させる */
+    const c = boot({ seed: 82 });
+    const ST = c.ST;
+    equip(ST, { level: 40, ilvl: 40, rarity: 'epic' });
+    ST.Game.start('s5', 'nightmare');
+    const run = ST.Game.run;
+    let t = 0;
+    for (let i = 0; i < 7200 && ST.Game.state === 'playing'; i++) {
+      run.s.correct = 120; run.s.elapsed = 20;   /* 6.0 打/秒 に固定 */
+      run.player.hp = Math.min(run.player.hp, 1);
+      run.player.shield = 0;
+      t += 1000 / 60; c._t = t;
+      c._takeRaf().forEach(cb => cb(t));
+    }
+    const res = run.result;
+    ok('撃沈してリザルトへ移る', !!res, ST.Game.state);
+    ok('リザルトが kps を持つ', res && typeof res.kps === 'number', res && res.kps);
+    ok('kps が実測どおり', res && Math.abs(res.kps - 6) < 0.06, res && res.kps);
+    ok('WPM は持たない', res && res.wpm === undefined);
+    const rec = ST.Save.d.records['s5|nightmare'];
+    ok('記録に kps が入る', rec && typeof rec.kps === 'number', rec && rec.kps);
+    ok('BEST 打/秒 が更新される', ST.Save.d.stats.bestKps > 0, ST.Save.d.stats.bestKps);
+  }
+  {
+    /* 旧セーブ（WPM）の読み替え。WPM/12 = 打鍵/秒 */
+    const a = boot({ seed: 81 });
+    a._store['spacetyping.save.v1'] = JSON.stringify({
+      version: 1,
+      stats: { totalKeys: 10, totalCorrect: 9, totalKills: 3, bestWpm: 72, runs: 2, bestCombo: 40 },
+      records: { 's1|pilot': { score: 999, rank: 'B', acc: 90, wpm: 60, wave: 6, cleared: true } }
+    });
+    const b = build({ seed: 81 });
+    b._store['spacetyping.save.v1'] = a._store['spacetyping.save.v1'];
+    b.loadAll();
+    const d = b.ST.Save.d;
+    ok('bestWpm 72 -> bestKps 6.0', Math.abs(d.stats.bestKps - 6) < 0.06, d.stats.bestKps);
+    ok('記録の wpm 60 -> kps 5.0', Math.abs(d.records['s1|pilot'].kps - 5) < 0.06, d.records['s1|pilot'].kps);
+    ok('スコアは失われない', d.records['s1|pilot'].score === 999);
   }
 }
 

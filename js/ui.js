@@ -123,7 +123,7 @@ ST.UI = (function () {
       'LV <b>' + d.pilot.level + '</b>' +
       '<span>EXP <b>' + U.fmt(d.pilot.exp) + '</b> / ' + U.fmt(need) + '</span>' +
       '<span>CR <b>' + U.fmt(d.pilot.credits) + '</b></span>' +
-      '<span>BEST WPM <b>' + d.stats.bestWpm + '</b></span>' +
+      '<span>BEST 打/秒 <b>' + (d.stats.bestKps || 0).toFixed(1) + '</b></span>' +
       '<span>KILLS <b>' + U.fmt(d.stats.totalKills) + '</b></span>' +
       (ST.Save.lastError()
         ? '<span style="color:#ff4d5e">! ' + U.esc(ST.Save.lastError()) + '</span>' : '');
@@ -642,8 +642,13 @@ ST.UI = (function () {
       '<p>敵には出現順に番号が振られ、<em>1番が自動的に目標</em>になります。撃破すれば次へ自動で進みます。',
       '倒しにくい敵を後回しにしたいときは <span class="kbig">SHIFT+TAB</span> で最後尾に回せます。</p>',
       '<h4>オーバードライブ</h4>',
-      '<p>正確な打鍵と撃破でODゲージが溜まります。満タンで <span class="kbig">ENTER</span>。敵弾が減速し、ダメージ2倍、',
-      '自機周辺の弾を<em>エネルギーを消費せず</em>薙ぎ払います。</p>',
+      '<p>ゲージは正確な打鍵と、完撃・撃破で溜まります。<em>敵弾を迎撃してもゲージは一切増えません</em> &mdash; ',
+      '守りに徹するほど切り札が遠のく、という取引です。</p>',
+      '<p>満タンで <span class="kbig">ENTER</span>。<em>画面上の敵弾を全滅</em>させ、<em>戦域圧力を半減</em>、',
+      '<em>迎撃エネルギーと障壁を全回復</em>し、そのうえ敵弾が減速してダメージが2倍になります。',
+      '崩れかけた盤面をまとめて立て直せる、唯一の手段です。</p>',
+      '<p>ただし必要量は<em>宙域が奥ほど、難易度が高いほど</em>増えます（最奥/特異点では入り口の9倍近く）。',
+      '任務中は一定なので、出撃前に「この面では何発撃てるか」を見積もっておいてください。</p>',
       '<h4>成長と装備</h4>',
       '<p>撃破で経験値と装備を入手。<em>迎撃容量・充填速度・迎撃燃費・迎撃爆風</em>を伸ばすほど攻撃モードに留まれる時間が延び、',
       '<em>砲撃力・完撃倍率</em>を伸ばすほど1単語あたりの火力が上がります。EPIC以上には特殊効果が宿ります。</p>',
@@ -652,8 +657,12 @@ ST.UI = (function () {
       '<span class="kbig">TAB</span> 攻撃/迎撃 切替 &nbsp; <span class="kbig">SHIFT+TAB</span> 目標を次へ &nbsp; ',
       '<span class="kbig">ENTER</span> オーバードライブ &nbsp; <span class="kbig">ESC</span> ポーズ</p>',
       '<h4>難易度</h4>',
-      '<p>NOVICE から SINGULARITY まで7段階。上位ほど弾速・弾数が上がり迎撃の消費が激しくなります。',
-      'VETERAN 以上は<em>ミスで迎撃エネルギーも減少</em>します。その分、経験値と入手率が大きく伸びます。</p>'
+      '<p>NOVICE から SINGULARITY まで7段階。上位ほど弾速・弾数が上がり迎撃の消費が激しくなります。</p>',
+      '<p><em>ミスの重さも難易度で変わります。</em>ミスすると入力が硬直し、その間は何も打てません。',
+      'NOVICE では0.16秒ですが、<em>SINGULARITY では0.78秒</em> &mdash; 単語ひとつ分の時間が丸ごと消えます。',
+      'さらに VETERAN 以上では<em>迎撃エネルギーも削られ</em>、こちらも難易度に比例して重くなります。',
+      '硬直中は画面中央に残り時間が表示されます。上位難易度では<em>速さより正確さ</em>が生存条件です。</p>',
+      '<p>その分、経験値と入手率が大きく伸びます。</p>'
     ].join('');
   }
 
@@ -682,7 +691,7 @@ ST.UI = (function () {
     h += '<div class="res-grid">';
     var rows = [
       ['SCORE', U.fmt(res.score)], ['正確率', res.acc + '%'],
-      ['WPM', res.wpm], ['最大コンボ', res.combo],
+      ['平均打鍵/秒', res.kps.toFixed(1)], ['最大コンボ', res.combo],
       ['撃破数', res.kills], ['完成単語', res.words],
       ['迎撃数', res.intercepts], ['被弾数', res.hits],
       ['到達', res.sector.endless ? 'WAVE ' + res.wave : (res.cleared ? 'CLEAR' : 'WAVE ' + res.wave)],

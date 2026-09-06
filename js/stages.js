@@ -5,7 +5,8 @@
 ST.Difficulty = (function () {
   /* bulletSpeed:弾速 bulletCount:弾数 hpMul:敵耐久 tierAdd:単語難度
      dmgTaken:被弾倍率 exp/drop:報酬 lockDrop:ミスでロック解除
-     graceMul:ミス硬直 homing:全弾にかかる誘導バイアス(rad/s)
+     graceMul:ミスの重さ(硬直秒とエネルギー減の両方に掛かる)
+     homing:全弾にかかる誘導バイアス(rad/s)
      laser:迎撃不可レーザーの発生しやすさ odCost:OD必要量の倍率
      (迎撃射程は難易度に依らず固定) */
   var L = [
@@ -35,28 +36,28 @@ ST.Difficulty = (function () {
       desc: '弾幕が厚くなり、単語も長い。モード切替の判断が要求される。',
       bulletSpeed: 1.15, bulletCount: 1.28, hpMul: 1.15, tierAdd: 1,
       dmgTaken: 1.30, exp: 1.40, drop: 1.30, score: 1.4,
-      lockDrop: false, graceMul: 1.15, spawnMul: 1.15, homing: 0.22, laser: 0.8, odCost: 1.25
+      lockDrop: false, graceMul: 1.4, spawnMul: 1.15, homing: 0.22, laser: 0.8, odCost: 1.25
     },
     {
       id: 'veteran', name: 'VETERAN', ja: '歴戦', color: '#ffa93d',
       desc: 'ミスで迎撃エネルギーが減る。正確さが生存に直結する領域。',
       bulletSpeed: 1.30, bulletCount: 1.55, hpMul: 1.35, tierAdd: 1,
       dmgTaken: 1.60, exp: 1.85, drop: 1.60, score: 1.9,
-      lockDrop: true, graceMul: 1.3, spawnMul: 1.3, homing: 0.34, laser: 0.9, odCost: 1.5
+      lockDrop: true, graceMul: 1.8, spawnMul: 1.3, homing: 0.34, laser: 0.9, odCost: 1.5
     },
     {
       id: 'nightmare', name: 'NIGHTMARE', ja: '悪夢', color: '#ff4d5e',
       desc: '画面が弾で埋まる。充填が追いつかず容量勝負になる。',
       bulletSpeed: 1.50, bulletCount: 1.95, hpMul: 1.60, tierAdd: 2,
       dmgTaken: 2.10, exp: 2.50, drop: 2.10, score: 2.6,
-      lockDrop: true, graceMul: 1.5, spawnMul: 1.5, homing: 0.5, laser: 1.12, odCost: 1.9
+      lockDrop: true, graceMul: 2.3, spawnMul: 1.5, homing: 0.5, laser: 1.12, odCost: 1.9
     },
     {
       id: 'singularity', name: 'SINGULARITY', ja: '特異点', color: '#ff4dd2',
       desc: '理不尽。装備を極めた者のための最終試練。報酬も最大。',
       bulletSpeed: 1.72, bulletCount: 2.40, hpMul: 1.90, tierAdd: 2,
       dmgTaken: 3.00, exp: 3.60, drop: 2.80, score: 3.6,
-      lockDrop: true, graceMul: 1.7, spawnMul: 1.75, homing: 0.7, laser: 2.6, odCost: 2.5
+      lockDrop: true, graceMul: 3.0, spawnMul: 1.75, homing: 0.7, laser: 2.6, odCost: 2.5
     }
   ];
   var M = {};

@@ -616,12 +616,13 @@ ST.Game = (function () {
     r.s.combo = Math.floor(r.s.combo * (st.comboKeep / 100));
     r.precisionStack = 0;
     r.chainCount = 0;
-    r.stun = 0.26 * run.diff.graceMul * (1 - st.grace / 100);
+    r.stun = MISS_STUN * run.diff.graceMul * (1 - st.grace / 100);
     r.stunMax = r.stun;
     ST.Audio.play('miss');
     flash.t = 0.14; flash.c = '#ff4d5e'; flash.a = 0.16;
-    /* 高難易度ではミスで迎撃エネルギーも削られる（ロック解除の代替ペナルティ） */
-    if (run.diff.lockDrop) addEnergy(-run.stats.interceptCost * 1.5);
+    /* 高難易度ではミスで迎撃エネルギーも削られる（ロック解除の代替ペナルティ）。
+       硬直と同じ graceMul で効かせるので、難易度が上がるほど1回のミスが重い。 */
+    if (run.diff.lockDrop) addEnergy(-st.interceptCost * MISS_ENERGY * run.diff.graceMul);
   }
 
   /* ============================================================
@@ -763,7 +764,7 @@ ST.Game = (function () {
     tracers.push({ x1: r.player.x, y1: r.player.y - 14, x2: bx, y2: by, t: 0.12, c: col });
     rings.push({ x: bx, y: by, r0: blast * 0.25, r1: blast, t: 0.26, life: 0.26, c: col });
     ST.Audio.play('intercept');
-    addOd((0.8 + n * 0.35) * (1 + st.odGain / 100));
+    /* 迎撃ではODゲージは溜まらない。ODは攻撃で稼ぐ資源。 */
     r.s.score += Math.round((8 + n * 6) * run.diff.score * (1 + st.scoreMul / 100));
     r.player.shield = Math.min(r.player.shieldMax, r.player.shield + 0.6 + n * 0.4);
     if (n > 1) floaters.push({ x: bx, y: by, vy: -40, t: 0.6, txt: 'x' + (n + 1), c: '#4df3ff', sz: 13 });
@@ -898,6 +899,8 @@ ST.Game = (function () {
   var LASER_DMG = 24;          /* 基礎威力（難易度の被害倍率は掛けない） */
   var LASER_RAMP = 2.2;        /* 圧力による威力倍率の上限係数 */
   var INTERCEPT_MARGIN = 26;   /* この距離以内を通過する弾だけを脅威とみなす */
+  var MISS_STUN = 0.26;        /* ミス硬直の基準秒。難易度の graceMul 倍で効く */
+  var MISS_ENERGY = 1.5;       /* ミスで失う迎撃エネルギー(迎撃1発分の倍数)。graceMul 倍で効く */
 
   function interceptRange() { return INTERCEPT_RANGE; }
 
@@ -1660,7 +1663,7 @@ ST.Game = (function () {
       : (r.waveState === 'bossfight' || r.waveState === 'boss' ? 'BOSS BATTLE' : 'WAVE ' + Math.min(r.waveIdx + 1, r.sector.waves) + ' / ' + r.sector.waves));
     setTxt('scoreVal', U.fmt(r.s.score));
     setTxt('comboVal', r.s.combo + (r.s.combo >= 30 ? ' !' : ''));
-    setTxt('wpmVal', String(wpm()));
+    setTxt('kpsVal', kps().toFixed(1));
     setTxt('accVal', accuracy() + '%');
 
     /* ボスバー */
@@ -1690,10 +1693,13 @@ ST.Game = (function () {
     } else wp.classList.add('hidden');
   }
 
-  function wpm() {
-    var mins = run.s.elapsed / 60;
-    if (mins < 0.02) return 0;
-    return Math.round((run.s.correct / 5) / mins);
+  /* タイピング速度は「1秒あたりの正打鍵数」で表す。
+     WPM は「英単語1語=5打鍵」という換算が前提で、ローマ字入力の日本語とは
+     噛み合わない（同じ語でも打鍵数が入力方式で変わる）ため使わない。 */
+  function kps() {
+    var s = run.s.elapsed;
+    if (s < 1) return 0;
+    return Math.round((run.s.correct / s) * 10) / 10;
   }
   function accuracy() {
     var t = run.s.correct + run.s.miss;
@@ -1710,11 +1716,12 @@ ST.Game = (function () {
     ST.Audio.stopMusic();
 
     var r = run, save = ST.Save.d;
-    var acc = accuracy(), w = wpm();
+    var acc = accuracy(), k = kps();
 
     /* ランク判定 */
     var score = r.s.score;
-    var rankScore = (acc * 1.6) + Math.min(w, 120) * 0.7 + Math.min(r.s.maxCombo, 300) * 0.28
+    /* 速度の寄与は 10打/秒 で頭打ち（従来の 120WPM 上限と同じ重み） */
+    var rankScore = (acc * 1.6) + Math.min(k, 10) * 8.4 + Math.min(r.s.maxCombo, 300) * 0.28
       + (cleared ? 60 : 0) - r.s.hits * 4;
     var rank = rankScore >= 300 ? 'S' : rankScore >= 250 ? 'A' : rankScore >= 200 ? 'B'
       : rankScore >= 150 ? 'C' : rankScore >= 100 ? 'D' : 'E';
@@ -1739,18 +1746,18 @@ ST.Game = (function () {
     var key = r.sector.id + '|' + run.diff.id;
     var prev = save.records[key];
     if (!prev || score > prev.score) {
-      save.records[key] = { score: score, rank: rank, acc: acc, wpm: w, wave: r.waveIdx + 1, cleared: cleared };
+      save.records[key] = { score: score, rank: rank, acc: acc, kps: k, wave: r.waveIdx + 1, cleared: cleared };
     }
     save.stats.totalKeys += r.s.keys;
     save.stats.totalCorrect += r.s.correct;
     save.stats.totalKills += r.s.kills;
     save.stats.runs++;
-    save.stats.bestWpm = Math.max(save.stats.bestWpm, w);
+    save.stats.bestKps = Math.max(save.stats.bestKps || 0, k);
     save.stats.bestCombo = Math.max(save.stats.bestCombo, r.s.maxCombo);
     ST.Save.save();
 
     run.result = {
-      cleared: cleared, rank: rank, score: score, acc: acc, wpm: w,
+      cleared: cleared, rank: rank, score: score, acc: acc, kps: k,
       combo: r.s.maxCombo, kills: r.s.kills, words: r.s.words,
       intercepts: r.s.intercepts, hits: r.s.hits, time: r.s.elapsed,
       exp: Math.round(expGain), credits: credits, loot: loot, levels: lvres,

@@ -16,7 +16,7 @@
 const { boot } = require('./harness');
 const { runMission, repeat, equip, pad, padEnd, pct } = require('./sim');
 
-const KPS = 5.75;   /* 約69WPM。実プレイの基準にしている打鍵速度 */
+const KPS = 5.75;   /* 平均5.75打鍵/秒。実プレイの基準にしている打鍵速度 */
 
 /* 「その装備でその宙域に挑む」典型的な組み合わせ。
    slots を省略すると5スロット全て埋めた完成形。
@@ -44,7 +44,7 @@ const LADDER = [
 function cmdClear(n, miss, overrides) {
   n = n || 16;
   miss = isFinite(miss) ? miss : 0;   /* 未指定なら 0（調整時の基準） */
-  console.log('打鍵 ' + KPS + '/秒 (約' + Math.round(KPS * 12) + 'WPM) / ミス率 ' +
+  console.log('打鍵 ' + KPS + '/秒 / ミス率 ' +
     (miss * 100).toFixed(0) + '% / 各' + n + '回 / シード固定');
   console.log('※ ミス率0%が調整時の基準。README の数値はこの条件で計測している。');
   if (overrides) console.log('override: ' + JSON.stringify(overrides));
@@ -113,7 +113,7 @@ function cmdBoss(n) {
   const ST = boot({ seed: 1 }).ST;
   console.log('各宙域のボスを「その宙域相当の装備」で倒すのに要する単語数（各' + n + '回）');
   console.log('');
-  console.log('宙域 ボス              所要単語  想定打鍵  60WPMなら  設計目標');
+  console.log('宙域 ボス              所要単語  想定打鍵  5打/秒なら  設計目標');
 
   ST.Sectors.list.forEach(s => {
     let words = 0, keys = 0;

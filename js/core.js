@@ -193,7 +193,7 @@ ST.Save = (function () {
     equipped: { weapon: null, core: null, armor: null, module1: null, module2: null },
     inventory: [],
     progress: { clearedSectors: {}, unlockedDiff: { novice: 1, cadet: 1, pilot: 1 } },
-    records: {},           /* key: sectorId+'|'+diff -> {score, rank, acc, wpm} */
+    records: {},           /* key: sectorId+'|'+diff -> {score, rank, acc, kps} */
     settings: {
       lang: 'ja',          /* ja | en | mix */
       showRomaji: true,
@@ -201,7 +201,7 @@ ST.Save = (function () {
       crt: true, shake: true, particles: 1,
       autoLock: true       /* 最初の1文字で自動ロックオン */
     },
-    stats: { totalKeys: 0, totalCorrect: 0, totalKills: 0, bestWpm: 0, runs: 0, bestCombo: 0 }
+    stats: { totalKeys: 0, totalCorrect: 0, totalKills: 0, bestKps: 0, runs: 0, bestCombo: 0 }
   };
 
   function deepMerge(base, over) {
@@ -214,6 +214,19 @@ ST.Save = (function () {
     }
     if (over) for (k in over) if (!(k in out)) out[k] = over[k];
     return out;
+  }
+
+  /* 旧セーブは速度を WPM で持っている。平均打鍵/秒へ読み替える。
+     WPM は「1語=5打鍵」換算なので、打鍵/秒 = WPM x 5 / 60 = WPM / 12。 */
+  function migrate(d) {
+    if (d.stats && !d.stats.bestKps && d.stats.bestWpm) {
+      d.stats.bestKps = Math.round(d.stats.bestWpm / 1.2) / 10;
+    }
+    for (var k in d.records) {
+      var r = d.records[k];
+      if (r && r.kps === undefined && r.wpm !== undefined) r.kps = Math.round(r.wpm / 1.2) / 10;
+    }
+    return d;
   }
 
   var data = null;
@@ -230,7 +243,7 @@ ST.Save = (function () {
     try { raw = localStorage.getItem(KEY); }
     catch (e) { warn('セーブデータを読み込めません（localStorage が使用できません）', e); }
     if (raw) {
-      try { data = deepMerge(defaults, JSON.parse(raw)); }
+      try { data = migrate(deepMerge(defaults, JSON.parse(raw))); }
       catch (e) {
         warn('セーブデータが壊れているため初期状態で開始します', e);
         data = deepMerge(defaults, {});
