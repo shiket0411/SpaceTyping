@@ -378,8 +378,22 @@ ST.Words = (function () {
 
   function resetRecent() { recent.length = 0; }
 
+  /* 任意の候補リストから、直近の出題を避けて1語選ぶ（訓練・カスタム単語用） */
+  function pickFrom(list) {
+    if (!list || !list.length) return null;
+    var w = null;
+    for (var k = 0; k < 8; k++) {
+      w = ST.U.choice(list);
+      if (!isRecent(w)) break;
+    }
+    remember(w);
+    return w;
+  }
+  function all(lang) { return lang === 'en' ? allEn : (lang === 'ja' ? allJa : allJa.concat(allEn)); }
+
   return {
     build: build, pick: pick, tierOf: tierOf, resetRecent: resetRecent, TIERS: TIERS,
+    pickFrom: pickFrom, all: all,
     get ja() { return allJa; }, get en() { return allEn; },
     get buckets() { return buckets; }
   };

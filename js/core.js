@@ -188,6 +188,8 @@ ST.Save = (function () {
     pilot: {
       name: 'PILOT-01', level: 1, exp: 0, credits: 300,
       statPoints: 0,
+      skills: {},          /* 技能 id -> ランク（skills.js） */
+      skillsInit: false,   /* 旧セーブへ過去のレベル分のポイントを配ったか */
       base: { atk: 0, def: 0, hp: 0, luck: 0 }
     },
     equipped: { weapon: null, core: null, armor: null, module1: null, module2: null },
@@ -201,7 +203,12 @@ ST.Save = (function () {
       crt: true, shake: true, particles: 1,
       autoLock: true       /* 最初の1文字で自動ロックオン */
     },
-    stats: { totalKeys: 0, totalCorrect: 0, totalKills: 0, bestKps: 0, runs: 0, bestCombo: 0 }
+    stats: { totalKeys: 0, totalCorrect: 0, totalKills: 0, bestKps: 0, runs: 0, bestCombo: 0 },
+    achievements: {},      /* 実績 id -> 解除時刻 */
+    analysis: { keys: {}, kana: {}, words: {} },   /* 打鍵の分析（training.js） */
+    customWords: [],       /* カスタム単語 */
+    daily: {},             /* 'YYYY-MM-DD' -> 当日の最高記録 */
+    ghosts: {}             /* 記録キー -> 自己ベストの区間タイム */
   };
 
   function deepMerge(base, over) {
@@ -219,6 +226,12 @@ ST.Save = (function () {
   /* 旧セーブは速度を WPM で持っている。平均打鍵/秒へ読み替える。
      WPM は「1語=5打鍵」換算なので、打鍵/秒 = WPM x 5 / 60 = WPM / 12。 */
   function migrate(d) {
+    /* 技能の導入前のセーブには、これまでのレベル分の技能ポイントを配る */
+    if (!d.pilot.skillsInit) {
+      d.pilot.statPoints = Math.max(0, (d.pilot.level || 1) - 1);
+      d.pilot.skills = {};
+      d.pilot.skillsInit = true;
+    }
     if (d.stats && !d.stats.bestKps && d.stats.bestWpm) {
       d.stats.bestKps = Math.round(d.stats.bestWpm / 1.2) / 10;
     }
@@ -248,7 +261,7 @@ ST.Save = (function () {
         warn('セーブデータが壊れているため初期状態で開始します', e);
         data = deepMerge(defaults, {});
       }
-    } else data = deepMerge(defaults, {});
+    } else data = migrate(deepMerge(defaults, {}));
     return data;
   }
 
@@ -263,7 +276,7 @@ ST.Save = (function () {
       return false;
     }
   }
-  function reset() { data = deepMerge(defaults, {}); save(); return data; }
+  function reset() { data = migrate(deepMerge(defaults, {})); save(); return data; }
   return {
     load: load, save: save, reset: reset,
     lastError: function () { return lastError; },

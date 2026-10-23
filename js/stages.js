@@ -205,6 +205,7 @@ ST.Growth = (function () {
     while (pilot.exp >= expToNext(pilot.level) && guard++ < 200) {
       pilot.exp -= expToNext(pilot.level);
       pilot.level++;
+      pilot.statPoints = (pilot.statPoints || 0) + 1;   /* 技能ポイント */
       res.levels++;
     }
     res.to = pilot.level;

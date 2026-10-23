@@ -234,7 +234,13 @@ ST.Moves = (function () {
    敵アーキタイプ
    ============================================================ */
 ST.EnemyTypes = (function () {
-  /* hp: 基準倍率 / tier: 単語難度 / atk: 攻撃定義 */
+  /* hp: 基準倍率 / tier: 単語難度 / atk: 攻撃定義
+     gimmick: 単語の仕掛け（game.js の GIMMICK を参照）
+       split  : 打ち切って倒すと、短い単語を持つ破片2体に分かれる
+       mask   : 先の2文字より後ろが伏字になる
+       timed  : 目標にしてから一定時間で単語が変わる（進捗は失う）
+       mirror : 単語が左右反転して表示される
+     spawned: ウェーブには出ず、他の敵から生まれる専用種 */
   var T = {
     drone: {
       name: 'DRONE', ja: '偵察ドローン', shape: 'tri', color: '#5ce08a',
@@ -272,7 +278,7 @@ ST.EnemyTypes = (function () {
     },
     bomber: {
       name: 'BOMBER', ja: '爆撃機', shape: 'square', color: '#ff4d5e',
-      hp: 2.4, r: 23, spd: 34, tier: 2, exp: 24, move: 'hover', holdY: 130,
+      hp: 2.4, r: 23, spd: 34, tier: 2, exp: 24, move: 'hover', holdY: 130, gimmick: 'split',
       atk: [
         { p: 'seed', every: 2.9, n: 3, spd: 95, split: 9, splitT: 1.2 },
         { p: 'seeker', every: 3.2, n: 2, homing: 1.7, spd: 105 }
@@ -289,7 +295,7 @@ ST.EnemyTypes = (function () {
     },
     phantom: {
       name: 'PHANTOM', ja: '幽鬼', shape: 'cross', color: '#ff4dd2',
-      hp: 2.0, r: 19, spd: 0, tier: 2, exp: 30, move: 'teleport',
+      hp: 2.0, r: 19, spd: 0, tier: 2, exp: 30, move: 'teleport', gimmick: 'mask',
       atk: [
         { p: 'seeker', every: 2.0, n: 4, homing: 1.9, spd: 100 },
         { p: 'aimed', every: 2.6, n: 3, spread: 0.18, spd: 200, r: 5 }
@@ -305,7 +311,7 @@ ST.EnemyTypes = (function () {
     },
     seraph: {
       name: 'SERAPH', ja: '天輪', shape: 'star', color: '#ffa93d',
-      hp: 3.8, r: 26, spd: 45, tier: 3, exp: 46, move: 'orbit', holdY: 175,
+      hp: 3.8, r: 26, spd: 45, tier: 3, exp: 46, move: 'orbit', holdY: 175, gimmick: 'mirror',
       atk: [
         { p: 'flower', every: 1.9, petals: 5, n: 4, spd: 108, r: 6, rot: 0.6 },
         { p: 'seeker', every: 2.8, n: 3, homing: 1.8, spd: 105 }
@@ -313,11 +319,17 @@ ST.EnemyTypes = (function () {
     },
     hexer: {
       name: 'HEXER', ja: '呪縛機', shape: 'diamond', color: '#a44dff',
-      hp: 3.0, r: 22, spd: 42, tier: 3, exp: 44, move: 'strafe', holdY: 145,
+      hp: 3.0, r: 22, spd: 42, tier: 3, exp: 44, move: 'strafe', holdY: 145, gimmick: 'timed',
       atk: [
         { p: 'delay', every: 3.0, n: 16, spd: 38, accel: 145 },
         { p: 'fan', every: 2.0, n: 5, arc: 0.7, spd: 195, r: 5 }
       ]
+    },
+    /* 爆撃機が分裂して生まれる破片。単語は短く、弾も控えめ */
+    shard: {
+      name: 'SHARD', ja: '破片', shape: 'tri', color: '#ff8a8a',
+      hp: 0.6, r: 11, spd: 64, tier: 0, exp: 4, move: 'dive', spawned: true,
+      atk: [{ p: 'aimed', every: 2.4, n: 1, spd: 170, r: 5 }]
     }
   };
 

@@ -98,19 +98,25 @@ ST.Game = (function () {
   /* ============================================================
      ステータス計算
      ============================================================ */
-  function computeStats() {
+  /* opts.equipped / opts.level: 指定の機体で計算する（デイリーの規格機）
+     opts.noSkills: 技能を加えない */
+  function computeStats(opts) {
+    opts = opts || {};
     var d = ST.Save.d;
-    var b = ST.Growth.baseStats(d.pilot.level);
-    var e = ST.Items.aggregate(d.equipped);
+    var b = ST.Growth.baseStats(opts.level || d.pilot.level);
+    var e = ST.Items.aggregate(opts.equipped || d.equipped);
+    /* 技能は装備の集計値へ加算する。上限（燃費40%など）は装備と合算で効く */
+    var sk = opts.noSkills ? {} : ST.Skills.bonus(d.pilot);
+    for (var sk1 in sk) if (e[sk1] != null) e[sk1] += sk[sk1];
     var s = {
-      maxHp: Math.round(b.maxHp + e.maxHp),
+      maxHp: Math.round((b.maxHp + e.maxHp) * (1 + (sk.hpPct || 0) / 100)),
       atk: (b.atk + e.atk) * (1 + e.atkPct / 100),
       crit: b.crit + e.crit,
       critMult: b.critMult + e.critMult,
       finisher: e.finisher,
       def: Math.min(50, e.def),
       hpRegen: e.hpRegen,
-      shieldMax: Math.round(b.shieldMax + e.shieldMax),
+      shieldMax: Math.round((b.shieldMax + e.shieldMax) * (1 + (sk.shieldPct || 0) / 100)),
       shieldRegen: e.shieldRegen,
       interceptBlast: 52 + e.interceptBlast,
       /* 迎撃エネルギー: 容量が「攻撃モードを続けられる時間」になる */
@@ -124,6 +130,8 @@ ST.Game = (function () {
       grace: Math.min(70, e.grace),
       expGain: e.expGain, dropRate: e.dropRate,
       creditGain: e.creditGain, scoreMul: e.scoreMul,
+      pressureKill: sk.pressureKill || 0,     /* 撃破で下がる圧力の増分% */
+      parryWindow: sk.parryWindow || 0,       /* レーザー予告の延長秒 */
       uniques: e.uniques
     };
     return s;
@@ -132,14 +140,21 @@ ST.Game = (function () {
   /* ============================================================
      開始 / 終了
      ============================================================ */
-  function start(sectorId, diffId) {
+  /* opts.sector / opts.diff / opts.stats: 訓練やデイリー用に差し替える
+     opts.seed: 盤面と出題をシード乱数で決める（デイリー）
+     opts.source: 'normal' | 'weak'（苦手克服） | 'custom'（カスタム単語）
+     opts.practiceTier: 訓練での単語の長さ */
+  function start(sectorId, diffId, opts) {
+    opts = opts || {};
     var save = ST.Save.d;
-    var sector = ST.Sectors.map[sectorId];
-    var diff = ST.Difficulty.get(diffId);
+    var sector = opts.sector || ST.Sectors.map[sectorId];
+    var diff = opts.diff || ST.Difficulty.get(diffId);
     if (!sector) return;
 
     ST.Words.resetRecent();
-    var stats = computeStats();
+    var stats = opts.stats || computeStats();
+    var TR = ST.Training;
+    var gkey = ghostKey(sector, diff);
 
     run = {
       sector: sector, diff: diff, stats: stats,
@@ -175,9 +190,24 @@ ST.Game = (function () {
       s: {
         keys: 0, correct: 0, miss: 0, kills: 0, intercepts: 0,
         score: 0, combo: 0, maxCombo: 0, words: 0, damage: 0,
-        t0: performance.now(), elapsed: 0, activeT: 0, hits: 0
+        t0: performance.now(), elapsed: 0, activeT: 0, hits: 0,
+        parries: 0, odUsed: 0
       },
-      finished: false, result: null
+      finished: false, result: null,
+      practice: !!sector.practice,
+      daily: opts.daily || null,
+      source: opts.source || 'normal',
+      practiceTier: opts.practiceTier == null ? 2 : opts.practiceTier,
+      customList: opts.source === 'custom' ? TR.prepareCustom(save.customWords) : null,
+      /* デイリーは出現・敵の単語・迎撃ワードを別々の乱数列で決める */
+      rng: opts.seed != null ? {
+        wave: TR.rng(opts.seed + 1), word: TR.rng(opts.seed + 2), ic: TR.rng(opts.seed + 3)
+      } : null,
+      rs: TR.newRunStats(),            /* 打鍵の分析 */
+      splits: [],                      /* ウェーブを片付けた時刻（自己ベストとの比較用） */
+      ghostKey: gkey,
+      ghost: gkey && save.ghosts[gkey] ? save.ghosts[gkey] : null,
+      ghostTxt: '', ghostAhead: false, ghostShow: 0
     };
     /* 弾・粒子クリア */
     for (var i = 0; i < BULLET_MAX; i++) bullets[i].alive = false;
@@ -194,7 +224,7 @@ ST.Game = (function () {
     ST.UI.show(null);
     state = 'playing';
     lastT = performance.now();
-    toast(sector.ja, '#4df3ff');
+    toast(sector.practice ? '訓練開始' : sector.ja, '#4df3ff');
     ST.Audio.resume();
     ST.Audio.startMusic();
     if (!raf) raf = requestAnimationFrame(loop);
@@ -232,13 +262,82 @@ ST.Game = (function () {
     return U.clamp(t, 0, 4);
   }
 
+  /* 出題元を切り替える。stream はデイリーで使う乱数列の名前 */
+  function pickWord(tier, stream) {
+    var r = run, save = ST.Save.d, lang = save.settings.lang;
+    return ST.Training.withRng(r.rng ? r.rng[stream] : null, function () {
+      if (r.source === 'weak') return ST.Training.pickWeak(save, tier, lang);
+      if (r.source === 'custom' && r.customList && r.customList.length) {
+        return ST.Training.pickCustom(r.customList, tier);
+      }
+      return ST.Words.pick(tier, lang);
+    });
+  }
+
   function assignWord(e) {
     /* ボスは高難易度で文章(tier5)まで使う。ボス戦の長さは所要打鍵で決まり
        語長には依存しないので、長文を混ぜても戦闘時間は変わらない。 */
     var tier = e.boss ? U.clamp(3 + run.diff.tierAdd, 2, 5) : wordTierFor(run.sector, e.def, run.diff);
-    var w = ST.Words.pick(tier, ST.Save.d.settings.lang);
+    if (run.practice) tier = run.practiceTier;
+    var w = pickWord(tier, 'word');
     e.word = w;
     e.matcher = ST.Romaji.create(w);
+    /* 単語の仕掛け */
+    e.gimmick = gimmickFor(e);
+    e.fadeT = FADE_SHOW;
+    e.wordTMax = e.gimmick === 'timed' ? TIMED_BASE + e.matcher.total * TIMED_PER : 0;
+    e.wordT = e.wordTMax;
+  }
+
+  /* ============================================================
+     単語の仕掛け
+     表示を変えるもの（伏字・鏡像・残像・時限）は PILOT 以上でのみ有効。
+     分裂は表示を変えないので全難易度で有効。訓練では無効。
+     ============================================================ */
+  var GIMMICK = {
+    split: '分裂', mask: '伏字', timed: '時限', mirror: '鏡像', fade: '残像'
+  };
+  /* ボスはフェーズが進むごとに仕掛けが変わる */
+  var BOSS_GIMMICK = [null, 'mask', 'mirror', 'fade', 'fade'];
+  var TIMED_BASE = 1.6;        /* 時限: 基準秒 */
+  var TIMED_PER = 0.3;         /* 時限: 1打鍵あたりの猶予秒（約3.3打/秒で間に合う） */
+  var FADE_SHOW = 1.3;         /* 残像: 単語が見えている秒数 */
+  var MASK_REVEAL = 2;         /* 伏字: 先に見えている文字数 */
+
+  function gimmickFor(e) {
+    if (run.practice) return null;
+    var visual = run.diff.index >= 2;
+    if (e.boss) return visual ? (BOSS_GIMMICK[e.phaseIdx] || null) : null;
+    var g = e.def.gimmick || null;
+    if (g && g !== 'split' && !visual) return null;
+    return g;
+  }
+
+  function rep(ch, n) { var o = ''; for (var i = 0; i < n; i++) o += ch; return o; }
+  function maskStr(str, keep, ch) {
+    return str.slice(0, keep) + str.slice(keep).replace(/[^ ]/g, ch);
+  }
+  function revStr(str) { return str.split('').reverse().join(''); }
+
+  /* 仕掛けを反映した表示用の文字列。
+     k0/k1: 打ち終えた/残りのかな   r0/r1/r2: 打ち終えた/次の1文字/残りのローマ字 */
+  function wordView(e) {
+    var m = e.matcher;
+    var kp = m.kanaParts(), rp = m.parts();
+    var v = { k0: kp[0], k1: kp[1], r0: rp[0], r1: rp[1], r2: rp[2], mirror: e.gimmick === 'mirror' };
+    var keep = -1;
+    if (e.gimmick === 'mask') keep = m.word.kana ? MASK_REVEAL : MASK_REVEAL + 1;
+    else if (e.gimmick === 'fade' && e.fadeT <= 0) keep = 1;
+    if (keep >= 0) {
+      v.k1 = maskStr(v.k1, keep, m.word.kana ? '＊' : '*');
+      v.r2 = maskStr(v.r2, keep, '*');
+    }
+    return v;
+  }
+  function gimmickLabel(e) {
+    if (!e.gimmick) return '';
+    if (e.gimmick === 'timed') return '[時限 ' + Math.max(0, e.wordT).toFixed(1) + 's]';
+    return '[' + GIMMICK[e.gimmick] + ']';
   }
 
   /* ---------- 目標の自動選択 ----------
@@ -278,7 +377,8 @@ ST.Game = (function () {
   /* ---------- 迎撃ワード ---------- */
   function nextInterceptWord() {
     var tier = U.clamp(run.sector.tierBase + run.diff.tierAdd, 0, 3);
-    var w = ST.Words.pick(tier, ST.Save.d.settings.lang);
+    if (run.practice) tier = run.practiceTier;
+    var w = pickWord(tier, 'ic');
     run.ic.word = w;
     run.ic.matcher = ST.Romaji.create(w);
   }
@@ -328,6 +428,8 @@ ST.Game = (function () {
       var ref = U.clamp(run.stats.atk, expectedAtk() * 0.5, expectedAtk() * 1.15);
       hp = ref * WORD_DPS * (def.words || 10) * (scale || 1) * run.diff.hpMul;
     }
+    /* 訓練は単語を打ち切るまで落ちない（削りで先に倒れると練習にならない） */
+    if (run.practice) hp = 1e9;
     e.maxHp = hp; e.hp = hp;
     e.atks = currentAttacks(e);
     for (var i = 0; i < e.atks.length; i++) e.atkT.push(U.rand(0.4, 1.2));
@@ -353,6 +455,12 @@ ST.Game = (function () {
   function startWave() {
     var sector = run.sector;
     var isBossWave = !sector.endless && run.waveIdx >= sector.waves;
+    if (isBossWave && sector.practice) {
+      run.waveState = 'clear';
+      run.waveStateT = 1.2;
+      toast('TRAINING COMPLETE', '#59ff9e');
+      return;
+    }
     if (isBossWave) {
       run.waveState = 'boss';
       run.waveStateT = 1.6;
@@ -360,7 +468,9 @@ ST.Game = (function () {
       ST.Audio.play('warn');
       return;
     }
-    run.waveQueue = ST.Sectors.buildWave(sector, run.waveIdx, run.diff);
+    run.waveQueue = ST.Training.withRng(run.rng ? run.rng.wave : null, function () {
+      return ST.Sectors.buildWave(sector, run.waveIdx, run.diff);
+    });
     run.waveTimer = 0;
     run.waveState = 'active';
   }
@@ -384,6 +494,36 @@ ST.Game = (function () {
     G.diff = d;
   }
 
+  /* ============================================================
+     自己ベストとの比較（ゴースト）
+     ウェーブを片付けた時刻を区間タイムとして記録し、自己ベストの同じ区間と比べる。
+     ============================================================ */
+  function ghostKey(sector, diff) {
+    if (sector.practice) return null;
+    if (sector.daily) return 'daily|' + sector.dateKey;
+    return sector.id + '|' + diff.id;
+  }
+  function pushSplit() {
+    var r = run;
+    var t = r.s.elapsed;
+    r.splits.push(t);
+    var i = r.splits.length - 1;
+    var g = r.ghost;
+    if (g && g.splits && g.splits[i] != null) {
+      var d = t - g.splits[i];
+      r.ghostAhead = d <= 0;
+      r.ghostTxt = 'BEST比 ' + (d <= 0 ? '-' : '+') + Math.abs(d).toFixed(1) + 's';
+      r.ghostShow = 4;
+    }
+  }
+  /* 区間を多く進めた方、同じなら速い方が良い記録 */
+  function ghostBetter(splits, g) {
+    if (!splits.length) return false;
+    if (!g || !g.splits || !g.splits.length) return true;
+    if (splits.length !== g.splits.length) return splits.length > g.splits.length;
+    return splits[splits.length - 1] < g.splits[g.splits.length - 1];
+  }
+
   function updateWave(dt) {
     var r = run;
     if (r.waveState === 'intro') {
@@ -402,6 +542,7 @@ ST.Game = (function () {
     }
     if (r.waveState === 'bossfight') {
       if (r.boss && r.boss.dead) {
+        pushSplit();
         r.waveState = 'clear';
         r.waveStateT = 1.8;
         toast('MISSION COMPLETE', '#59ff9e');
@@ -426,6 +567,7 @@ ST.Game = (function () {
       spawnEnemy(sp.type, sp.x, sp.y);
     }
     if (!r.waveQueue.length && !r.enemies.length) {
+      pushSplit();
       r.waveIdx++;
       if (r.sector.endless) {
         r.waveState = 'between'; r.waveStateT = 1.1;
@@ -554,9 +696,9 @@ ST.Game = (function () {
     if (!tgt || tgt.dead) return;
     /* onCorrect 内の撃破で r.target が入れ替わり得るので参照を確保しておく */
     var res = tgt.matcher.feed(ch);
-    if (res === 'ok') { onCorrect(tgt); }
-    else if (res === 'done') { onCorrect(tgt, true); onWordComplete(tgt); }
-    else onMiss();
+    if (res === 'ok') { ST.Training.recordOk(r.rs, ch); onCorrect(tgt); }
+    else if (res === 'done') { ST.Training.recordOk(r.rs, ch); onCorrect(tgt, true); onWordComplete(tgt); }
+    else onMiss(tgt.matcher);
   }
 
   /* 迎撃モードの打鍵: 敵とは無関係のワードを打ち、迎撃エネルギーを充填する */
@@ -565,8 +707,9 @@ ST.Game = (function () {
     var m = r.ic.matcher;
     if (!m) { nextInterceptWord(); m = r.ic.matcher; }
     var res = m.feed(ch);
-    if (res === 'miss') { onMiss(); return; }
+    if (res === 'miss') { onMiss(m); return; }
 
+    ST.Training.recordOk(r.rs, ch);
     registerCorrect();
     addEnergy(st.energyCharge);
     ST.Audio.play(r.s.combo % 2 ? 'key' : 'key2');
@@ -604,6 +747,37 @@ ST.Game = (function () {
     }
     addOd(0.55 * (1 + st.odGain / 100));
     r.s.score += Math.round(6 * (1 + r.s.combo * 0.01) * run.diff.score * (1 + st.scoreMul / 100));
+    comboMilestone(r.s.combo);
+  }
+
+  /* ============================================================
+     コンボの節目
+     50 / 100 / 以降100ごとに、自機周辺の弾消しと圧力の低下が起きる。
+     コンボは1打ずつしか増えないので、ちょうどその値になった瞬間だけ発火する。
+     ============================================================ */
+  var COMBO_STEPS = [
+    { at: 50, r: 140, pr: 0.015 },
+    { at: 100, r: 220, pr: 0.03 }
+  ];
+  /* 圧力の低下量は上位難易度のクリア率を見て半分に絞った（0.03/0.06/0.10 では SINGULARITY が +2/16） */
+  var COMBO_BIG = { every: 100, from: 200, r: 320, pr: 0.05 };
+  var COMBO_PR = 1;            /* 節目の圧力低下の倍率（0 で圧力を下げない） */
+  function comboMilestone(c) {
+    var step = null, i;
+    for (i = 0; i < COMBO_STEPS.length; i++) if (COMBO_STEPS[i].at === c) step = COMBO_STEPS[i];
+    var big = c >= COMBO_BIG.from && c % COMBO_BIG.every === 0;
+    if (big) step = COMBO_BIG;
+    if (!step) return;
+    var r = run, p = r.player;
+    var n = clearBulletsNear(p.x, p.y, step.r, false);
+    if (!r.practice) r.pressure = Math.max(0, r.pressure - step.pr * COMBO_PR);
+    if (big) p.shield = p.shieldMax;
+    rings.push({ x: p.x, y: p.y, r0: 20, r1: step.r, t: 0.4, life: 0.4, c: '#ffc24d' });
+    floaters.push({
+      x: p.x, y: p.y - 70, vy: -36, t: 1.1,
+      txt: 'COMBO ' + c + (n ? '  弾消し x' + n : ''), c: '#ffc24d', sz: 16
+    });
+    ST.Audio.play('ok');
   }
 
   function onCorrect(e, isLast) {
@@ -649,8 +823,9 @@ ST.Game = (function () {
     var fin = st.atk * Math.max(3, e.matcher.total) * 0.7 * (1 + st.finisher / 100);
     if (r.od.active > 0) fin *= 2;
     /* 単語を打ち切ったら雑魚は必ず落ちる。ボスだけが複数単語を要求する。 */
-    if (!e.boss) fin = Math.max(fin, e.hp);
+    if (!e.boss && !r.practice) fin = Math.max(fin, e.hp);
     damageEnemy(e, fin, false, true);
+    if (r.practice && !e.boss && !e.dead) killEnemy(e);
     addOd(3.5 * (1 + st.odGain / 100));
     r.s.score += Math.round(45 * run.diff.score * (1 + st.scoreMul / 100));
 
@@ -667,14 +842,52 @@ ST.Game = (function () {
       /* ボスは新しい単語を割り当てて継続 */
       assignWord(e);
       ST.Audio.play('ok');
+      /* 予告中のレーザーがあれば、単語を打ち切った瞬間に反射する。
+         撃破した場合は killEnemy 側で反射する */
+      tryParry();
     } else {
       refreshTarget();          /* 撃破されたので自動的に次の敵へ */
     }
   }
 
-  function onMiss() {
+  /* ============================================================
+     パリィ
+     レーザーの予告中に攻撃モードで単語を打ち切ると、最も古い予告を1本反射して
+     撃った敵へ返す。迎撃モードの充填ワードでは発動しない（篭りを強くしないため）。
+     OD ゲージは溜まらない（溜まるようにすると上位難易度が崩れる）。
+     装備が強いと単語を打ち切る前に目標が落ちるので、目標を打鍵で撃破したときも発動する。
+     ============================================================ */
+  var parrying = false;        /* 反射ダメージによる撃破で連鎖しないための印 */
+  var PARRY_ON = 1;            /* 0 でパリィを無効化（バランス計測用） */
+  var PARRY_DMG = 0.5;         /* 反射ダメージ: 雑魚の最大HPに対する割合 */
+  var PARRY_BOSS = 0.025;      /* 反射ダメージ: ボスの最大HPに対する割合 */
+  function tryParry() {
+    var r = run, p = r.player;
+    if (parrying || !PARRY_ON) return false;
+    for (var i = 0; i < r.lasers.length; i++) {
+      var L = r.lasers[i];
+      if (L.fired) continue;
+      r.lasers.splice(i, 1);
+      r.s.parries++;
+      tracers.push({ x1: p.x, y1: p.y - 14, x2: L.x, y2: L.y, t: 0.25, c: '#ffffff' });
+      rings.push({ x: p.x, y: p.y, r0: 10, r1: 80, t: 0.3, life: 0.3, c: '#ffffff' });
+      floaters.push({ x: p.x, y: p.y - 58, vy: -40, t: 0.9, txt: 'PARRY', c: '#ffffff', sz: 19 });
+      ST.Audio.play('intercept');
+      shakeIt(0.15, 5);
+      var src = L.e;
+      parrying = true;
+      if (src && !src.dead) damageEnemy(src, src.maxHp * (src.boss ? PARRY_BOSS : PARRY_DMG), false, true);
+      parrying = false;
+      return true;
+    }
+    return false;
+  }
+
+  /* m: ミスした単語の照合器（分析で「打つべきだったキー」を記録する） */
+  function onMiss(m) {
     var r = run, st = r.stats;
     r.s.miss++;
+    if (m) ST.Training.recordMiss(r.rs, m.parts()[1], m.curSeg(), m.word);
     r.s.combo = Math.floor(r.s.combo * (st.comboKeep / 100));
     r.precisionStack = 0;
     r.chainCount = 0;
@@ -723,7 +936,14 @@ ST.Game = (function () {
     r.s.kills++;
 
     var isBoss = e.boss;
-    r.pressure = Math.max(0, r.pressure - (isBoss ? 0.35 : PRESSURE_KILL));
+    r.pressure = Math.max(0, r.pressure - (isBoss ? 0.35 : PRESSURE_KILL) * (1 + st.pressureKill / 100));
+    /* 分裂: 打ち切って倒したときだけ、短い単語の破片2体に分かれる */
+    if (e.gimmick === 'split' && e.matcher && e.matcher.done) {
+      for (var si = -1; si <= 1; si += 2) {
+        var sh = spawnEnemy('shard', U.clamp(e.x + si * 34, 70, W - 70), e.y + 6);
+        if (sh) { sh.spawnT = 0.3; sh.holdY = e.y; }
+      }
+    }
     spawnParticles(e.x, e.y, isBoss ? 90 : 22, e.color, isBoss ? 460 : 260);
     ST.Audio.play(isBoss ? 'bigkill' : 'kill');
     shakeIt(isBoss ? 0.7 : 0.14, isBoss ? 22 : 5);
@@ -741,8 +961,9 @@ ST.Game = (function () {
     var exp = (e.def.exp || 10) * run.diff.exp * (1 + st.expGain / 100);
     r.expPending = (r.expPending || 0) + exp;
 
-    /* ドロップ */
+    /* ドロップ。訓練とデイリー（規格機）では装備は落ちない */
     var chance = (isBoss ? 1.0 : 0.055) * run.diff.drop * (1 + st.dropRate / 100);
+    if (r.practice || r.daily) chance = 0;
     var rolls = isBoss ? 3 : 1;
     for (var i = 0; i < rolls; i++) {
       if (Math.random() < chance) {
@@ -757,6 +978,8 @@ ST.Game = (function () {
       }
     }
     if (r.target === e) {
+      /* 目標を攻撃モードの打鍵で落とした = 単語を打ち切ったのと同じ扱いでパリィする */
+      if (r.mode === 'attack') tryParry();
       /* 単語を打ち切る前に落とした場合だけ、余った打鍵をミス扱いしない猶予を置く。
          打ち切って倒したときは即座に次の敵へ移れるよう猶予を入れない。 */
       if (!(e.matcher && e.matcher.done)) { r.grace = 0.4; r.graceM = e.matcher; }
@@ -775,6 +998,7 @@ ST.Game = (function () {
   /* flat: 難易度の被害倍率を掛けない（レーザーは頻度側で難易度差を付けている） */
   function hurtPlayer(raw, flat) {
     var r = run, p = r.player, st = r.stats;
+    if (r.practice) return;              /* 訓練では被弾しない */
     /* 無敵時間は設けない。弾幕を防ぐ手段は迎撃だけ。 */
     var dmg = raw * (flat ? 1 : run.diff.dmgTaken);
     var def = st.def + (st.uniques.aegis && p.shield >= p.shieldMax - 0.5 ? 20 : 0);
@@ -879,10 +1103,12 @@ ST.Game = (function () {
 
   function fireLaser(e) {
     var p = run.player;
+    /* 技能「反射神経」で予告が延びる = パリィの猶予が延びる */
+    var charge = LASER_CHARGE + (run.stats.parryWindow || 0);
     run.lasers.push({
       e: e, x: e.x, y: e.y,
       ang: U.angleTo(e.x, e.y, p.x, p.y),
-      t: LASER_CHARGE, fired: false, fade: 0,
+      t: charge, charge: charge, fired: false, fade: 0,
       color: e.color || '#ff4d5e'
     });
     ST.Audio.play('charge');
@@ -920,7 +1146,7 @@ ST.Game = (function () {
       var ex = L.x + Math.cos(L.ang) * 1400, ey = L.y + Math.sin(L.ang) * 1400;
       if (!L.fired) {
         /* 予告線: 細く点滅し、発射直前に太くなる */
-        var k = 1 - L.t / LASER_CHARGE;
+        var k = 1 - L.t / (L.charge || LASER_CHARGE);
         ctx.globalAlpha = 0.25 + k * 0.5;
         ctx.strokeStyle = L.color;
         ctx.lineWidth = 1 + k * 3;
@@ -965,6 +1191,7 @@ ST.Game = (function () {
   var INTERCEPT_MARGIN = 26;   /* この距離以内を通過する弾だけを脅威とみなす */
   var MISS_STUN = 0.26;        /* ミス硬直の基準秒。難易度の graceMul 倍で効く */
   var MISS_ENERGY = 1.5;       /* ミスで失う迎撃エネルギー(迎撃1発分の倍数)。graceMul 倍で効く */
+  var DAILY_BONUS = 800;       /* デイリーをその日初めてクリアしたときの資金 */
 
   function interceptRange() { return INTERCEPT_RANGE; }
 
@@ -1005,6 +1232,7 @@ ST.Game = (function () {
     if (r.od.gauge < odCost()) { ST.Audio.play('deny'); return; }
     r.od.gauge = 0;
     r.od.active = 6 * (1 + st.odDuration / 100);
+    r.s.odUsed++;
 
     /* 発動時に戦況を一度リセットする切り札 */
     var cleared = clearBulletsNear(W / 2, H / 2, 4000, true);   /* 画面上の敵弾を全消去 */
@@ -1092,15 +1320,19 @@ ST.Game = (function () {
     if (shake.t > 0) { shake.t -= dt; if (shake.t <= 0) shake.m = 0; }
     if (flash.t > 0) flash.t -= dt;
 
-    /* 戦域圧力。撃破が止まると上がり続ける。 */
-    var prBefore = r.pressure;
-    r.pressure = U.clamp(r.pressure + dt / PRESSURE_TIME, 0, 1);
-    /* 致死域に入ったことを一度だけ知らせる（レーザーが連射域に入る） */
-    if (prBefore < 0.85 && r.pressure >= 0.85) {
-      toast('CRITICAL PRESSURE', '#ff4d5e');
-      ST.Audio.play('warn');
+    if (r.ghostShow > 0) r.ghostShow -= dt;
+
+    /* 戦域圧力。撃破が止まると上がり続ける。訓練では圧力もレーザーも無い。 */
+    if (!r.practice) {
+      var prBefore = r.pressure;
+      r.pressure = U.clamp(r.pressure + dt / PRESSURE_TIME, 0, 1);
+      /* 致死域に入ったことを一度だけ知らせる（レーザーが連射域に入る） */
+      if (prBefore < 0.85 && r.pressure >= 0.85) {
+        toast('CRITICAL PRESSURE', '#ff4d5e');
+        ST.Audio.play('warn');
+      }
+      tickLaser(dt);
     }
-    tickLaser(dt);
     updateLasers(dt);
 
     /* OD */
@@ -1140,8 +1372,19 @@ ST.Game = (function () {
       var mv = ST.Moves[e.def.move] || ST.Moves.dive;
       mv(e, dt * slow);
 
-      /* 発射 */
-      if (e.spawnT <= 0 && e.y > -20) {
+      /* 単語の仕掛けの時間経過。時限は目標にしている間だけ減る */
+      if (e.fadeT > 0) e.fadeT -= dt;
+      if (e.gimmick === 'timed' && r.target === e && e.spawnT <= 0) {
+        e.wordT -= dt;
+        if (e.wordT <= 0) {
+          assignWord(e);
+          floaters.push({ x: e.x, y: e.y - e.r - 34, vy: -30, t: 0.8, txt: '単語変化', c: '#a44dff', sz: 14 });
+          ST.Audio.play('deny');
+        }
+      }
+
+      /* 発射（訓練では撃ってこない） */
+      if (e.spawnT <= 0 && e.y > -20 && !r.practice) {
         for (var a = 0; a < e.atks.length; a++) {
           e.atkT[a] -= dt * slow;
           if (e.atkT[a] <= 0) {
@@ -1488,16 +1731,29 @@ ST.Game = (function () {
     ctx.textAlign = 'left';
   }
 
+  /* 色ごとの文字列片を中央揃えで並べる。mirror なら並びも各片も反転する */
+  function drawSegs(segs, cx, y, mirror) {
+    var list = segs;
+    if (mirror) list = segs.slice().reverse().map(function (g) { return { t: revStr(g.t), c: g.c }; });
+    var total = 0, i;
+    for (i = 0; i < list.length; i++) total += ctx.measureText(list[i].t).width;
+    var x = cx - total / 2;
+    ctx.textAlign = 'left';
+    for (i = 0; i < list.length; i++) {
+      ctx.fillStyle = list[i].c;
+      ctx.fillText(list[i].t, x, y);
+      x += ctx.measureText(list[i].t).width;
+    }
+    return total;
+  }
+
   function drawEnemyWord(e, isLocked, cfg) {
-    var m = e.matcher;
-    var kp = m.kanaParts();
+    var v = wordView(e);
     var y = e.y - e.r - 16;
     var big = isLocked ? 20 : 16;
 
-    ctx.textAlign = 'center';
     ctx.font = '600 ' + big + 'px "Consolas","MS Gothic",monospace';
-    var full = kp[0] + kp[1];
-    var wpx = ctx.measureText(full).width;
+    var wpx = ctx.measureText(v.k0 + v.k1).width;
 
     /* 背景板 */
     ctx.fillStyle = 'rgba(2,6,16,.72)';
@@ -1506,32 +1762,36 @@ ST.Game = (function () {
       ctx.strokeStyle = 'rgba(77,243,255,.6)'; ctx.lineWidth = 1;
       ctx.strokeRect(e.x - wpx / 2 - 7, y - big + 2, wpx + 14, big + 6);
     }
+    /* 時限の残り時間 */
+    if (e.gimmick === 'timed' && e.wordTMax > 0) {
+      var tr = U.clamp(e.wordT / e.wordTMax, 0, 1);
+      ctx.fillStyle = tr < 0.3 ? '#ff4d5e' : '#a44dff';
+      ctx.fillRect(e.x - wpx / 2 - 7, y + 6, (wpx + 14) * tr, 2);
+    }
 
     /* 打鍵済み / 未打鍵 */
-    var doneW = ctx.measureText(kp[0]).width;
-    var startX = e.x - wpx / 2;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = isLocked ? '#1b7f8c' : 'rgba(111,139,171,.55)';
-    ctx.fillText(kp[0], startX, y);
-    ctx.fillStyle = isLocked ? '#ffffff' : '#cfe6ff';
-    ctx.fillText(kp[1], startX + doneW, y);
+    drawSegs([
+      { t: v.k0, c: isLocked ? '#1b7f8c' : 'rgba(111,139,171,.55)' },
+      { t: v.k1, c: isLocked ? '#ffffff' : '#cfe6ff' }
+    ], e.x, y, v.mirror);
+
+    /* 仕掛けの名札 */
+    if (e.gimmick && isLocked) {
+      ctx.font = '700 10px "Consolas","MS Gothic",monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffa93d';
+      ctx.fillText(gimmickLabel(e), e.x, y - big - 2);
+      ctx.textAlign = 'left';
+    }
 
     /* ローマ字補助（日本語のときのみ） */
     if (cfg.showRomaji && e.word.kana) {
-      var parts = m.parts();
       ctx.font = '13px "Consolas",monospace';
-      var rf = parts[0] + parts[1] + parts[2];
-      var rw = ctx.measureText(rf).width;
-      var rx = e.x - rw / 2;
-      var ry = y + 15;
-      ctx.fillStyle = 'rgba(27,127,140,.9)';
-      ctx.fillText(parts[0], rx, ry);
-      var w0 = ctx.measureText(parts[0]).width;
-      ctx.fillStyle = isLocked ? '#ffc24d' : '#8fb8d8';
-      ctx.fillText(parts[1], rx + w0, ry);
-      var w1 = ctx.measureText(parts[1]).width;
-      ctx.fillStyle = 'rgba(111,139,171,.75)';
-      ctx.fillText(parts[2], rx + w0 + w1, ry);
+      drawSegs([
+        { t: v.r0, c: 'rgba(27,127,140,.9)' },
+        { t: v.r1, c: isLocked ? '#ffc24d' : '#8fb8d8' },
+        { t: v.r2, c: 'rgba(111,139,171,.75)' }
+      ], e.x, y + 15, v.mirror);
     }
     ctx.textAlign = 'left';
   }
@@ -1668,6 +1928,18 @@ ST.Game = (function () {
     /* ビネット */
     ctx.fillStyle = vignetteGradient(); ctx.fillRect(0, 0, W, H);
 
+    /* レーザー予告中はパリィの手順を出す */
+    var charging = false;
+    for (var li = 0; li < r.lasers.length; li++) if (!r.lasers[li].fired) charging = true;
+    if (charging) {
+      ctx.textAlign = 'center';
+      ctx.font = '700 12px "Consolas","MS Gothic",monospace';
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.55 + Math.sin(r.s.elapsed * 14) * 0.35) + ')';
+      ctx.fillText(r.mode === 'attack' ? 'PARRY - 単語を打ち切れ' : 'PARRY - 攻撃モードで単語を打ち切れ',
+        r.player.x, r.player.y - 40);
+      ctx.textAlign = 'left';
+    }
+
     /* エネルギーが尽きかけていて弾幕が来ているときだけ切替を促す */
     if (r.mode === 'attack' && r.threat > 0 && r.energy < r.stats.interceptCost * 4) {
       ctx.textAlign = 'center';
@@ -1739,7 +2011,15 @@ ST.Game = (function () {
     hudEl.classList.toggle('pr-high', r.pressure >= 0.6);
     hudEl.classList.toggle('pr-crit', r.pressure >= 0.85);
     setTxt('sectorName', r.sector.ja);
-    setTxt('waveInfo', r.sector.endless
+    var gd = $('ghostDelta');
+    if (gd) {
+      gd.classList.toggle('hidden', !(r.ghostShow > 0));
+      gd.classList.toggle('ahead', r.ghostAhead);
+      setTxt('ghostDelta', r.ghostTxt);
+    }
+    setTxt('waveInfo', r.practice
+      ? 'TRAINING ' + Math.min(r.waveIdx + 1, r.sector.waves) + ' / ' + r.sector.waves
+      : r.sector.endless
       ? 'WAVE ' + (r.waveIdx + 1) + '  /  ENDLESS'
       : (r.waveState === 'bossfight' || r.waveState === 'boss' ? 'BOSS BATTLE' : 'WAVE ' + Math.min(r.waveIdx + 1, r.sector.waves) + ' / ' + r.sector.waves));
     setTxt('scoreVal', U.fmt(r.s.score));
@@ -1770,17 +2050,27 @@ ST.Game = (function () {
     if (r.mode === 'intercept' ? r.ic.matcher : (r.target && !r.target.dead)) {
       wp.classList.remove('hidden');
       wp.classList.toggle('mode-intercept', r.mode === 'intercept');
-      var m = r.mode === 'intercept' ? r.ic.matcher : r.target.matcher;
-      setTxt('wordLabel', r.mode === 'intercept'
+      var ic = r.mode === 'intercept';
+      var m = ic ? r.ic.matcher : r.target.matcher;
+      /* 迎撃ワードには仕掛けが無い。目標は仕掛けを反映した表示にする */
+      var v = ic ? (function () {
+        var kp = m.kanaParts(), rp = m.parts();
+        return { k0: kp[0], k1: kp[1], r0: rp[0], r1: rp[1], r2: rp[2], mirror: false };
+      })() : wordView(r.target);
+      setTxt('wordLabel', ic
         ? '迎撃エネルギー充填'
-        : '目標  ' + r.target.def.ja + '   (残り ' + orderedEnemies().length + ')');
-      var kp = m.kanaParts();
-      setHtml('wordKana', '<span style="color:#1b7f8c">' + U.esc(kp[0]) + '</span>' + U.esc(kp[1]));
-      var parts = m.parts();
-      setTxt('wDone', parts[0]);
-      setTxt('wNext', parts[1]);
-      setTxt('wRest', parts[2]);
-      setTxt('wordMeaning', m.sub || '');
+        : '目標  ' + r.target.def.ja + '   (残り ' + orderedEnemies().length + ')' +
+          (r.target.gimmick ? '   ' + gimmickLabel(r.target) : ''));
+      var done = '<span style="color:#1b7f8c">' + U.esc(v.mirror ? revStr(v.k0) : v.k0) + '</span>';
+      var rest = U.esc(v.mirror ? revStr(v.k1) : v.k1);
+      setHtml('wordKana', v.mirror ? rest + done : done + rest);
+      $('wordRomaji').classList.toggle('mirror', v.mirror);
+      setTxt('wDone', v.mirror ? revStr(v.r0) : v.r0);
+      setTxt('wNext', v.r1);
+      setTxt('wRest', v.mirror ? revStr(v.r2) : v.r2);
+      /* 伏字・残像の間は意味も隠す（答えになってしまうため） */
+      var hideSub = !ic && (r.target.gimmick === 'mask' || (r.target.gimmick === 'fade' && r.target.fadeT <= 0));
+      setTxt('wordMeaning', hideSub ? '' : (m.sub || ''));
     } else wp.classList.add('hidden');
   }
 
@@ -1818,9 +2108,14 @@ ST.Game = (function () {
       : rankScore >= 150 ? 'C' : rankScore >= 100 ? 'D' : 'E';
     if (cleared && acc >= 99 && r.s.hits === 0) rank = 'SS';
 
-    /* 報酬 */
-    var expGain = (r.expPending || 0) * (cleared ? 1.35 : 0.7);
-    var credits = Math.round((score * 0.045 + (cleared ? 220 : 40)) * (1 + r.stats.creditGain / 100) * run.diff.drop);
+    /* 報酬。訓練は報酬なし。デイリーは装備が落ちない代わりに、その日の初クリアで資金 */
+    var practice = r.practice, daily = r.daily;
+    var expGain = practice ? 0 : (r.expPending || 0) * (cleared ? 1.35 : 0.7);
+    var credits = practice ? 0
+      : Math.round((score * 0.045 + (cleared ? 220 : 40)) * (1 + r.stats.creditGain / 100) * run.diff.drop);
+    var dailyPrev = daily ? save.daily[daily.key] : null;
+    var dailyBonus = daily && cleared && !(dailyPrev && dailyPrev.cleared) ? DAILY_BONUS : 0;
+    credits += dailyBonus;
     var lvres = ST.Growth.gainExp(save.pilot, expGain);
     save.pilot.credits += credits;
 
@@ -1833,32 +2128,57 @@ ST.Game = (function () {
     for (var oi = 0; oi < overflow.length; oi++) overflowCr += ST.Items.sellPrice(overflow[oi]);
     save.pilot.credits += overflowCr;
 
-    /* 進行 & 記録 */
-    if (cleared && !r.sector.endless) {
+    /* 進行 & 記録。訓練とデイリーは宙域の進行・記録には数えない */
+    var normal = !practice && !daily;
+    if (normal && cleared && !r.sector.endless) {
       save.progress.clearedSectors[r.sector.id] = Math.max(
         save.progress.clearedSectors[r.sector.id] || 0, run.diff.index + 1);
     }
     var key = r.sector.id + '|' + run.diff.id;
     var prev = save.records[key];
-    if (!prev || score > prev.score) {
-      save.records[key] = { score: score, rank: rank, acc: acc, kps: k, wave: r.waveIdx + 1, cleared: cleared };
+    var record = { score: score, rank: rank, acc: acc, kps: k, wave: r.waveIdx + 1, cleared: cleared };
+    if (normal && (!prev || score > prev.score)) save.records[key] = record;
+    if (daily && (!dailyPrev || score > dailyPrev.score)) {
+      record.mod = daily.mod.id;
+      record.lang = save.settings.lang;
+      save.daily[daily.key] = record;
     }
+
+    /* 自己ベストの区間タイム */
+    var ghostPrev = r.ghost, ghostNew = false, ghostDelta = null;
+    if (ghostPrev && ghostPrev.splits && r.splits.length && ghostPrev.splits[r.splits.length - 1] != null) {
+      ghostDelta = r.splits[r.splits.length - 1] - ghostPrev.splits[r.splits.length - 1];
+    }
+    if (r.ghostKey && ghostBetter(r.splits, ghostPrev)) {
+      save.ghosts[r.ghostKey] = { splits: r.splits.map(function (t) { return Math.round(t * 100) / 100; }) };
+      ghostNew = true;
+    }
+
+    /* 打鍵の分析を蓄積する */
+    ST.Training.merge(save, r.rs);
+
     save.stats.totalKeys += r.s.keys;
     save.stats.totalCorrect += r.s.correct;
     save.stats.totalKills += r.s.kills;
     save.stats.runs++;
     save.stats.bestKps = Math.max(save.stats.bestKps || 0, k);
     save.stats.bestCombo = Math.max(save.stats.bestCombo, r.s.maxCombo);
-    ST.Save.save();
 
     run.result = {
       cleared: cleared, rank: rank, score: score, acc: acc, kps: k,
       combo: r.s.maxCombo, kills: r.s.kills, words: r.s.words,
       intercepts: r.s.intercepts, hits: r.s.hits, time: r.s.elapsed,
+      miss: r.s.miss, parries: r.s.parries, odUsed: r.s.odUsed,
       exp: Math.round(expGain), credits: credits, loot: loot, levels: lvres,
       overflow: overflow.length, overflowCr: overflowCr,
-      sector: r.sector, diff: run.diff, wave: r.waveIdx + 1
+      sector: r.sector, diff: run.diff, wave: r.waveIdx + 1,
+      practice: practice, source: r.source, daily: daily, dailyBonus: dailyBonus,
+      weakKeys: ST.Training.weakKeys(r.rs, 3, 0),
+      ghostNew: ghostNew && !!ghostPrev, ghostDelta: ghostDelta
     };
+    /* 実績は結果が出揃ってから判定し、報酬ごとまとめて保存する */
+    run.result.achievements = ST.Achievements.check(run.result, run, save);
+    ST.Save.save();
     if (lvres.levels > 0) ST.Audio.play('levelup');
 
     hudEl.classList.add('hidden');
@@ -1915,11 +2235,50 @@ ST.Game = (function () {
     document.body.classList.toggle('no-crt', !s.crt);
   }
 
+  /* ============================================================
+     デイリー / 訓練の開始
+     ============================================================ */
+  /* key を省略すると今日の任務 */
+  function startDaily(key) {
+    var cfg = ST.Training.daily(key);
+    var stats = computeStats({ equipped: cfg.loadout, level: cfg.level, noSkills: true });
+    start('daily', cfg.diffId, {
+      sector: cfg.sector, diff: ST.Training.dailyDiff(cfg), stats: stats, seed: cfg.seed, daily: cfg
+    });
+  }
+
+  /* opts.source: 'normal' | 'weak' | 'custom' / opts.tier: 単語の長さ(0..4) */
+  var PRACTICE_WAVES = 6;
+  function startPractice(opts) {
+    opts = opts || {};
+    var sector = {
+      id: 'practice', num: 1, name: 'TRAINING', ja: '訓練宙域', desc: '',
+      enemies: ['drone', 'scout'], waves: PRACTICE_WAVES, boss: null, bossScale: 1,
+      ilvl: 1, req: null, hue: [150, 190], tierBase: 0, odSector: 1, practice: true
+    };
+    var b = ST.Difficulty.get('cadet'), d = {};
+    for (var k in b) d[k] = b[k];
+    d.tierAdd = 0; d.spawnMul = 0.85;
+    start('practice', 'cadet', {
+      sector: sector, diff: d, source: opts.source || 'normal',
+      practiceTier: U.clamp(opts.tier == null ? 2 : opts.tier, 0, 4)
+    });
+  }
+  /* 訓練を途中で切り上げてリザルトを見る */
+  function endPractice() {
+    if (!run || !run.practice || run.finished) return;
+    state = 'playing';
+    finish(false);
+  }
+
   /* パターン関数から参照される */
   G.newBullet = newBullet;
 
   return {
     init: init, start: start, pause: pause, resume: resume, quit: quit,
+    startDaily: startDaily, startPractice: startPractice, endPractice: endPractice,
+    /* テスト用（tools/test.js） */
+    _t: { spawnEnemy: spawnEnemy, wordView: wordView, fireLaser: fireLaser, finish: finish, assignWord: assignWord },
     computeStats: computeStats, applyAudioSettings: applyAudioSettings,
     get state() { return state; },
     get run() { return run; }

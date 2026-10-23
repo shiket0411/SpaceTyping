@@ -14,7 +14,8 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const SOURCES = [
   'js/core.js', 'js/romaji.js', 'js/words.js', 'js/items.js',
-  'js/entities.js', 'js/stages.js', 'js/ui.js', 'js/game.js'
+  'js/entities.js', 'js/stages.js', 'js/skills.js', 'js/achievements.js', 'js/training.js',
+  'js/ui.js', 'js/game.js'
 ];
 
 /* ---------- Canvas 2D スタブ ---------- */
@@ -111,7 +112,8 @@ function makeEl(id, tag) {
 }
 
 const SCREEN_IDS = ['scr-title', 'scr-difficulty', 'scr-sector', 'scr-hangar', 'scr-shop',
-  'scr-settings', 'scr-help', 'scr-pause', 'scr-result'];
+  'scr-settings', 'scr-help', 'scr-pause', 'scr-result',
+  'scr-daily', 'scr-training', 'scr-analysis', 'scr-skills', 'scr-achieve'];
 
 /**
  * ゲームを動かせるサンドボックスを作る。

@@ -225,6 +225,11 @@ ST.Romaji = (function () {
     }
     return best;
   };
+  /* いま打っている拍（分析用） */
+  KanaMatcher.prototype.curSeg = function () {
+    var b = this._best();
+    return b ? this.segs[b.s].k : '';
+  };
   /* 表示用: [済み, 次の1文字, 残り] */
   KanaMatcher.prototype.parts = function () {
     if (this.done) return [this.typed, '', ''];
@@ -283,6 +288,7 @@ ST.Romaji = (function () {
     }
     return true;
   };
+  AsciiMatcher.prototype.curSeg = function () { return ''; };
   AsciiMatcher.prototype.firstChars = function () {
     return this.done ? [] : [this.src.charAt(this.count)];
   };

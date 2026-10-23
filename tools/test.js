@@ -879,9 +879,366 @@ function testFixes() {
 }
 
 /* ============================================================
+   8. 追加機能
+   ============================================================ */
+function testFeatures() {
+  const { equip, runMission } = require('./sim');
+  const setup = (seed, sector, diff) => {
+    const c = boot({ seed: seed });
+    const ST = c.ST;
+    equip(ST, { level: 40, ilvl: 40, rarity: 'epic' });
+    ST.Game.start(sector || 's4', diff || 'ace');
+    const run = ST.Game.run;
+    let t = 0;
+    const step = (n) => {
+      for (let i = 0; i < (n || 1); i++) {
+        run.player.hp = run.player.maxHp;
+        t += 1000 / 60; c._t = t;
+        c._takeRaf().forEach(cb => cb(t));
+      }
+    };
+    const type = (s) => { for (const ch of s) c.key(ch); };
+    const $ = (id) => c.document.getElementById(id);
+    return { c, ST, run, step, type, $, T: ST.Game._t };
+  };
+  /* 敵を1体出して、すぐ目標にできる状態にする */
+  const spawn = (ST, run, type, boss) => {
+    const e = ST.Game._t.spawnEnemy(type, 480, 200, !!boss, 1);
+    e.spawnT = 0; e.seq = -1000 - run.enemies.length;
+    run.target = e;
+    return e;
+  };
+  const typeWord = (c, m) => {
+    let guard = 0;
+    while (!m.done && guard++ < 200) c.key(m.firstChars()[0]);
+  };
+
+  head('[機能] パリィ: 予告中に攻撃モードで単語を打ち切るとレーザーを反射する');
+  {
+    const { c, ST, run, T } = setup(100);
+    run.mode = 'attack';
+    const src = spawn(ST, run, 'drone');
+    const tgt = spawn(ST, run, 'scout');
+    T.fireLaser(src);
+    ok('予告中のレーザーがある', run.lasers.length === 1 && !run.lasers[0].fired);
+    const hp0 = src.hp;
+    typeWord(c, tgt.matcher);
+    ok('レーザーが消える', run.lasers.length === 0);
+    ok('パリィ回数が増える', run.s.parries === 1);
+    ok('撃った敵に反射ダメージ', src.dead || src.hp < hp0);
+  }
+  {
+    const { c, ST, run, T } = setup(101);
+    const src = spawn(ST, run, 'drone');
+    T.fireLaser(src);
+    run.mode = 'intercept';
+    typeWord(c, run.ic.matcher);
+    ok('迎撃ワードの完成ではパリィしない', run.lasers.length === 1 && run.s.parries === 0);
+  }
+  {
+    const { ST, run, T } = setup(102);
+    ST.Save.d.pilot.skills = { composure: 1, rhythm: 1, reflex: 3 };
+    run.stats = ST.Game.computeStats();
+    const src = spawn(ST, run, 'drone');
+    T.fireLaser(src);
+    ok('技能「反射神経」で予告が延びる', Math.abs(run.lasers[0].charge - 1.0) < 1e-6, run.lasers[0].charge);
+  }
+
+  head('[機能] 単語の仕掛け');
+  {
+    const { c, ST, run, T } = setup(110, 's4', 'ace');
+    run.mode = 'attack';
+    const b = spawn(ST, run, 'bomber');
+    ok('爆撃機は分裂', b.gimmick === 'split');
+    const n0 = run.enemies.filter(e => e.typeId === 'shard').length;
+    typeWord(c, b.matcher);
+    const shards = run.enemies.filter(e => e.typeId === 'shard' && !e.dead);
+    ok('打ち切ると破片が2体出る', b.dead && shards.length === n0 + 2, shards.length);
+
+    const ph = spawn(ST, run, 'phantom');
+    ok('幽鬼は伏字', ph.gimmick === 'mask');
+    const v = T.wordView(ph);
+    const hidden = v.k1.slice(2);
+    ok('先の2文字より後ろが隠れる', hidden.length === 0 || /^[＊* ]+$/.test(hidden), v.k1);
+    ok('先の2文字は見える', v.k1.slice(0, 2) === ph.matcher.kanaParts()[1].slice(0, 2));
+
+    const se = spawn(ST, run, 'seraph');
+    ok('天輪は鏡像', se.gimmick === 'mirror' && T.wordView(se).mirror === true);
+
+    const hx = spawn(ST, run, 'hexer');
+    ok('呪縛機は時限', hx.gimmick === 'timed' && hx.wordT > 0);
+    const m0 = hx.matcher;
+    hx.wordT = 0.01;
+    run.target = hx;
+    c._t += 1000 / 60;
+    c._takeRaf().forEach(cb => cb(c._t));
+    ok('時間切れで単語が変わる', hx.matcher !== m0 && hx.wordT > 0);
+  }
+  {
+    const { ST, run } = setup(111, 's4', 'novice');
+    ok('NOVICE では伏字が無効', spawn(ST, run, 'phantom').gimmick === null);
+    ok('NOVICE でも分裂は有効', spawn(ST, run, 'bomber').gimmick === 'split');
+  }
+  {
+    const { ST, run, T } = setup(112, 's4', 'ace');
+    const boss = spawn(ST, run, 'aegis', true);
+    ok('ボスの第1フェーズは仕掛けなし', boss.gimmick === null);
+    boss.phaseIdx = 1; T.assignWord(boss);
+    ok('第2フェーズは伏字', boss.gimmick === 'mask');
+    boss.phaseIdx = 3; T.assignWord(boss);
+    ok('第4フェーズは残像', boss.gimmick === 'fade');
+    ok('残像は最初は見える', !/[＊*]/.test(T.wordView(boss).k1));
+    boss.fadeT = 0;
+    const k1 = T.wordView(boss).k1;
+    ok('時間が経つと次の1文字以外が隠れる', k1.length <= 1 || /^[＊* ]+$/.test(k1.slice(1)), k1);
+  }
+
+  head('[機能] コンボの節目で弾消しと圧力低下');
+  {
+    const { c, ST, run } = setup(120);
+    run.mode = 'intercept';
+    run.ic.word = { text: 'abc' };
+    run.ic.matcher = ST.Romaji.create(run.ic.word);
+    run.s.combo = 49; run.pressure = 0.5;
+    c.key('a');
+    ok('50コンボで圧力が下がる', Math.abs(run.pressure - 0.485) < 1e-6, run.pressure);
+    run.s.combo = 52;
+    const p1 = run.pressure;
+    c.key('b');
+    ok('節目以外では下がらない', run.pressure === p1);
+  }
+
+  head('[機能] 打鍵の分析');
+  {
+    const { c, ST, run, T } = setup(130);
+    run.mode = 'intercept';
+    run.ic.word = { kana: 'しゅ', text: 'しゅ' };
+    run.ic.matcher = ST.Romaji.create(run.ic.word);
+    c.key('x');
+    ok('打つべきキーのミスを記録', run.rs.keys.s && run.rs.keys.s[1] === 1, JSON.stringify(run.rs.keys));
+    ok('ミスしたかなを記録', run.rs.kana['しゅ'] === 1, JSON.stringify(run.rs.kana));
+    ok('ミスした単語を記録', run.rs.words['しゅ'] && run.rs.words['しゅ'].n === 1);
+    run.stun = 0;
+    c.key('s');
+    ok('正打も記録', run.rs.keys.s[0] === 1);
+    T.finish(false);
+    const a = ST.Save.d.analysis;
+    ok('任務の終了で蓄積される', a.keys.s && a.keys.s[1] >= 1 && a.kana['しゅ'] >= 1);
+  }
+  {
+    const ST = boot({ seed: 131 }).ST;
+    const a = ST.Training.analysis(ST.Save.d);
+    a.keys.z = [10, 40];
+    const hasZ = (w) => (w.romaji || w.text).indexOf('z') >= 0;
+    let withZ = 0, base = 0;
+    for (let i = 0; i < 60; i++) {
+      if (hasZ(ST.Training.pickWeak(ST.Save.d, 2, 'en'))) withZ++;
+      if (hasZ(ST.Words.pick(2, 'en'))) base++;
+    }
+    ok('苦手克服は苦手キーを含む語を通常の3倍以上出す', withZ >= Math.max(15, base * 3), withZ + ' vs 通常 ' + base);
+  }
+
+  head('[機能] カスタム単語');
+  {
+    const ST = boot({ seed: 140 }).ST;
+    const res = ST.Training.parseCustom([
+      'こうせい,恒星,fixed star',
+      'ジュウリョク,重力',
+      'photosynthesis\t光合成',
+      '# コメント',
+      '漢字だけ',
+      'こうせい',
+      ''
+    ].join('\n'));
+    ok('有効な語を読み込む', res.words.length === 3, res.words.length);
+    ok('カタカナを平仮名に直す', res.words[1].kana === 'じゅうりょく');
+    ok('英語のタブ後ろを意味にする', res.words[2].text === 'photosynthesis' && res.words[2].ja === '光合成');
+    ok('漢字の読みはエラー', res.errors.length === 1, res.errors.join(' / '));
+    const back = ST.Training.parseCustom(ST.Training.formatCustom(res.words));
+    ok('書き出して読み直しても同じ', back.words.length === 3 && back.words[0].en === 'fixed star');
+  }
+
+  head('[機能] 訓練（カスタム単語）');
+  {
+    const c = boot({ seed: 150 });
+    const ST = c.ST, d = ST.Save.d;
+    d.customWords = ST.Training.parseCustom('ほし\nつき\nそら\nうみ\nやま').words;
+    const credits0 = d.pilot.credits, exp0 = d.pilot.exp;
+    ST.Game.startPractice({ source: 'custom', tier: 0 });
+    const run = ST.Game.run;
+    const words = new Set();
+    let t = 0, maxBullets = 0;
+    for (let f = 0; f < 60 * 240 && ST.Game.state === 'playing'; f++) {
+      if (f % 10 === 0) {
+        const m = run.target && !run.target.dead ? run.target.matcher : null;
+        if (m) { words.add(m.word.kana); const fc = m.firstChars(); if (fc.length) c.key(fc[0]); }
+      }
+      t += 1000 / 60; c._t = t;
+      c._takeRaf().forEach(cb => cb(t));
+      maxBullets = Math.max(maxBullets, run.lasers.length);
+    }
+    ok('訓練が最後まで終わる', !!run.result && run.result.practice && run.result.cleared, ST.Game.state);
+    ok('カスタム単語だけが出る', [...words].every(w => ['ほし', 'つき', 'そら', 'うみ', 'やま'].indexOf(w) >= 0), [...words].join(','));
+    ok('レーザーが出ない', maxBullets === 0);
+    ok('被弾しない', run.s.hits === 0);
+    ok('報酬なし', d.pilot.credits - credits0 === (run.result.achievements || []).reduce((s, a) => s + a.cr, 0) && d.pilot.exp === exp0);
+    ok('宙域の記録に残らない', !Object.keys(d.records).some(k => k.indexOf('practice') === 0));
+    ok('実績「自習」', !!d.achievements.custom);
+  }
+
+  head('[機能] デイリー任務');
+  {
+    const a = boot({ seed: 160 }), b = boot({ seed: 999 });
+    const ca = a.ST.Training.daily('2026-10-24'), cb = b.ST.Training.daily('2026-10-24');
+    ok('同じ日付なら同じ宙域', ca.sector.enemies.join() === cb.sector.enemies.join() && ca.sector.boss === cb.sector.boss);
+    ok('同じ日付なら同じ補正', ca.mod.id === cb.mod.id);
+    ok('同じ日付なら同じ規格機', Object.keys(ca.loadout).every(k => ca.loadout[k].name === cb.loadout[k].name));
+    const other = a.ST.Training.daily('2026-10-25');
+    ok('日付が変われば変わる', other.seed !== ca.seed);
+
+    /* 異なる乱数シードの環境でも、盤面と出題の並びが一致する */
+    const firstWords = (c) => {
+      c.ST.Game.startDaily('2026-10-24');
+      const run = c.ST.Game.run;
+      let t = 0;
+      for (let f = 0; f < 60 * 6; f++) {
+        t += 1000 / 60; c._t = t; c._takeRaf().forEach(cb => cb(t));
+      }
+      return run.enemies.map(e => e.typeId + ':' + (e.word.kana || e.word.text)).join(',') + '|' +
+        (run.ic.word.kana || run.ic.word.text);
+    };
+    const wa = firstWords(a), wb = firstWords(b);
+    ok('別の環境でも敵と単語の並びが同じ', wa === wb, wa + ' / ' + wb);
+    const run = a.ST.Game.run;
+    ok('規格機は自分の装備を使わない', run.stats.maxHp === a.ST.Game.computeStats({ equipped: ca.loadout, level: 30, noSkills: true }).maxHp);
+    a.ST.Game._t.finish(false);
+    ok('記録がデイリー欄に入る', !!a.ST.Save.d.daily['2026-10-24']);
+    ok('宙域の記録には入らない', !a.ST.Save.d.records['daily|ace']);
+    ok('装備は落ちない', run.loot.length === 0);
+  }
+  {
+    /* 規格機で標準的に遊んでクリアできるか */
+    const keys = ['2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27'];
+    let clears = 0;
+    keys.forEach((k, i) => {
+      const c = boot({ seed: 170 + i });
+      const ST = c.ST;
+      ST.Game.startDaily(k);
+      const run = ST.Game.run;
+      let t = 0;
+      for (let f = 0; f < 60 * 600 && ST.Game.state === 'playing'; f++) {
+        if (f % 10 === 0) {
+          if (run.mode === 'attack' && run.energy < run.stats.energyMax * 0.3) c.key('Tab');
+          else if (run.mode === 'intercept' && run.energy > run.stats.energyMax * 0.9) c.key('Tab');
+          const m = run.mode === 'intercept' ? run.ic.matcher : (run.target && !run.target.dead ? run.target.matcher : null);
+          if (m) { const fc = m.firstChars(); if (fc.length) c.key(fc[0]); }
+          if (run.od.ready) c.key('Enter');
+        }
+        t += 1000 / 60; c._t = t; c._takeRaf().forEach(cb => cb(t));
+      }
+      if (run.result && run.result.cleared) clears++;
+    });
+    ok('デイリーは6打/秒・ミス0で概ねクリアできる', clears >= 3, clears + '/4');
+  }
+
+  head('[機能] 自己ベストの区間タイム');
+  {
+    const { ST, run, T } = setup(180, 's1', 'pilot');
+    run.splits = [10, 20, 30];
+    T.finish(false);
+    const g = ST.Save.d.ghosts['s1|pilot'];
+    ok('初回は記録される', g && g.splits.length === 3);
+  }
+  {
+    const c = boot({ seed: 181 });
+    const ST = c.ST;
+    ST.Save.d.ghosts['s1|pilot'] = { splits: [10, 20, 30] };
+    ST.Game.start('s1', 'pilot');
+    const run = ST.Game.run;
+    run.splits = [9, 18, 33];
+    ST.Game._t.finish(false);
+    ok('同じ区間数で遅ければ更新しない', ST.Save.d.ghosts['s1|pilot'].splits[2] === 30);
+    ok('差がリザルトに出る', Math.abs(run.result.ghostDelta - 3) < 1e-6, run.result.ghostDelta);
+    ST.Game.start('s1', 'pilot');
+    ST.Game.run.splits = [9, 18, 27, 40];
+    ST.Game._t.finish(false);
+    ok('区間を多く進めたら更新', ST.Save.d.ghosts['s1|pilot'].splits.length === 4);
+  }
+
+  head('[機能] 技能');
+  {
+    const ST = boot({ seed: 190 }).ST;
+    const p = ST.Save.d.pilot;
+    ok('新規セーブは0ポイント', p.statPoints === 0 && p.skillsInit);
+    ST.Growth.gainExp(p, ST.Growth.expToNext(1) + 1);
+    ok('レベルアップで1ポイント', p.statPoints === 1, p.statPoints);
+    ok('前提のない技能は覚えられる', ST.Skills.canLearn(p, 'gunnery'));
+    ok('前提が未習得だと覚えられない', !ST.Skills.canLearn(p, 'finisher'));
+    p.statPoints = 10;
+    const a0 = ST.Game.computeStats().atk;
+    for (let i = 0; i < 5; i++) ST.Skills.learn(p, 'gunnery');
+    const a1 = ST.Game.computeStats().atk;
+    ok('砲撃強化5で砲撃力 +15%', Math.abs(a1 / a0 - 1.15) < 1e-6, (a1 / a0).toFixed(4));
+    ok('最大ランクを超えない', !ST.Skills.learn(p, 'gunnery'));
+    for (let i = 0; i < 5; i++) ST.Skills.learn(p, 'hull');
+    p.credits = 99999;
+    ok('振り直しで全ポイントが戻る', ST.Skills.respec(p) && p.statPoints === 10 && ST.Skills.spent(p) === 0);
+  }
+  {
+    /* 技能導入前のセーブ: 過去のレベル分を配る */
+    const a = boot({ seed: 191 });
+    const b = build({ seed: 191 });
+    b._store['spacetyping.save.v1'] = JSON.stringify({ version: 1, pilot: { level: 25, exp: 0, credits: 0, statPoints: 0 } });
+    b.loadAll();
+    ok('旧セーブにレベル-1ポイント', b.ST.Save.d.pilot.statPoints === 24, b.ST.Save.d.pilot.statPoints);
+    void a;
+  }
+
+  head('[機能] 実績');
+  {
+    const ST = boot({ seed: 200 }).ST;
+    const d = ST.Save.d;
+    const cr0 = d.pilot.credits;
+    const res = {
+      cleared: true, hits: 0, miss: 0, combo: 120, kps: 6, rank: 'S', parries: 0, odUsed: 1,
+      sector: ST.Sectors.map.s2, diff: ST.Difficulty.get('pilot'), wave: 6, loot: []
+    };
+    const got = ST.Achievements.check(res, null, d).map(a => a.id).sort();
+    ok('条件を満たした実績が解除される', ['combo100', 'first_clear', 'no_hit', 'perfect'].every(x => got.indexOf(x) >= 0), got.join(','));
+    ok('満たさない実績は解除されない', got.indexOf('no_od') < 0 && got.indexOf('combo300') < 0);
+    ok('報酬が入る', d.pilot.credits > cr0);
+    ok('2回目は解除されない', ST.Achievements.check(res, null, d).length === 0);
+  }
+
+  head('[機能] 画面の組み立て');
+  {
+    const c = boot({ seed: 210 });
+    const ST = c.ST;
+    const $ = (id) => c.document.getElementById(id);
+    ST.Save.d.progress.clearedSectors.s1 = 3;
+    let threw = null;
+    ['scr-title', 'scr-daily', 'scr-training', 'scr-analysis', 'scr-skills', 'scr-achieve', 'scr-hangar', 'scr-help']
+      .forEach(id => { try { ST.UI.show(id, true); } catch (e) { threw = id + ': ' + e.message; } });
+    ok('新しい画面がエラーなく組み上がる', !threw, threw);
+    ok('タイトルにデイリーと訓練がある', $('titleMenu')._children.some(b => b.textContent.indexOf('DAILY') >= 0) &&
+      $('titleMenu')._children.some(b => b.textContent.indexOf('TRAINING') >= 0));
+    ST.UI.show('scr-training', true);
+    $('customText').value = 'ほし\nつき';
+    $('btnCustomSave').onclick();
+    ok('訓練画面からカスタム単語を保存できる', ST.Save.d.customWords.length === 2);
+    ST.Save.d.pilot.statPoints = 1;
+    ST.UI.show('scr-skills', true);
+    const sk = $('skillsBody').querySelectorAll('.skill').find(x => x.dataset.skill === 'gunnery');
+    sk.onclick && sk.onclick();
+    ok('技能画面から習得できる', ST.Save.d.pilot.skills.gunnery === 1);
+  }
+  void runMission;
+}
+
+/* ============================================================
    実行
    ============================================================ */
-const SUITES = { romaji: testRomaji, play: testPlay, render: testRender, ui: testUI, controls: testControls, jitter: testJitter, fixes: testFixes };
+const SUITES = { romaji: testRomaji, play: testPlay, render: testRender, ui: testUI, controls: testControls, jitter: testJitter, fixes: testFixes, features: testFeatures };
 const arg = (process.argv[2] || 'all').toLowerCase();
 const list = arg === 'all' ? Object.keys(SUITES) : [arg];
 

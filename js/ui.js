@@ -23,7 +23,12 @@ ST.UI = (function () {
     'scr-shop': buildShop,
     'scr-settings': buildSettings,
     'scr-help': buildHelp,
-    'scr-pause': buildPause
+    'scr-pause': buildPause,
+    'scr-daily': buildDaily,
+    'scr-training': buildTraining,
+    'scr-analysis': buildAnalysis,
+    'scr-skills': buildSkills,
+    'scr-achieve': buildAchieve
   };
 
   function show(id, push) {
@@ -62,6 +67,8 @@ ST.UI = (function () {
   }
   function onKey(ev) {
     if (!cur) return;
+    /* 入力欄（カスタム単語）では矢印や Enter をメニュー操作に取らない */
+    if (ev.target && /^(TEXTAREA|INPUT)$/.test(ev.target.tagName || '')) return;
     var items = navItems();
     if (ev.key === 'ArrowDown' || ev.key === 'ArrowRight') {
       if (!items.length) return;
@@ -113,7 +120,11 @@ ST.UI = (function () {
     var m = $('titleMenu');
     m.innerHTML = '';
     m.appendChild(menuItem('出 撃  SORTIE', function () { show('scr-difficulty', true); }));
+    m.appendChild(menuItem('デイリー  DAILY OPS', function () { show('scr-daily', true); }, !dailyUnlocked()));
+    m.appendChild(menuItem('訓 練  TRAINING', function () { show('scr-training', true); }));
     m.appendChild(menuItem('格 納 庫  HANGAR', function () { show('scr-hangar', true); }));
+    m.appendChild(menuItem('分 析  ANALYSIS', function () { show('scr-analysis', true); }));
+    m.appendChild(menuItem('実 績  ACHIEVEMENTS', function () { show('scr-achieve', true); }));
     m.appendChild(menuItem('遊 び 方  HOW TO PLAY', function () { show('scr-help', true); }));
     m.appendChild(menuItem('設 定  SETTINGS', function () { show('scr-settings', true); }));
 
@@ -121,6 +132,7 @@ ST.UI = (function () {
     var need = ST.Growth.expToNext(d.pilot.level);
     $('pilotStrip').innerHTML =
       'LV <b>' + d.pilot.level + '</b>' +
+      (d.pilot.statPoints > 0 ? '<span style="color:#ffc24d">技能P <b>' + d.pilot.statPoints + '</b></span>' : '') +
       '<span>EXP <b>' + U.fmt(d.pilot.exp) + '</b> / ' + U.fmt(need) + '</span>' +
       '<span>CR <b>' + U.fmt(d.pilot.credits) + '</b></span>' +
       '<span>BEST 打/秒 <b>' + (d.stats.bestKps || 0).toFixed(1) + '</b></span>' +
@@ -273,7 +285,8 @@ ST.UI = (function () {
       ['無償迎撃', st.freeIntercept.toFixed(0) + '%'],
       ['満タンで迎撃', Math.floor(st.energyMax / Math.max(0.1, st.interceptCost)) + ' 発'],
       ['OD蓄積 / 持続', '+' + st.odGain.toFixed(0) + '% / +' + st.odDuration.toFixed(0) + '%'],
-      ['経験値 / 入手率', '+' + st.expGain.toFixed(0) + '% / +' + st.dropRate.toFixed(0) + '%']
+      ['経験値 / 入手率', '+' + st.expGain.toFixed(0) + '% / +' + st.dropRate.toFixed(0) + '%'],
+      ['技能ポイント', d.pilot.statPoints + ' (使用 ' + ST.Skills.spent(d.pilot) + ')']
     ];
     $('pilotStats').innerHTML = rows.map(function (r) {
       return '<div class="kv"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>';
@@ -299,6 +312,7 @@ ST.UI = (function () {
     renderInventory();
     renderDetail();
     $('btnShop').onclick = function () { ST.Audio.play('ok'); show('scr-shop', true); };
+    $('btnSkills').onclick = function () { ST.Audio.play('ok'); show('scr-skills', true); };
   }
 
   function renderInventory() {
@@ -682,6 +696,32 @@ ST.UI = (function () {
       '<h4>成長と装備</h4>',
       '<p>撃破で経験値と装備を入手。<em>迎撃容量・充填速度・迎撃燃費・迎撃爆風</em>を伸ばすほど攻撃モードに留まれる時間が延び、',
       '<em>砲撃力・完撃倍率</em>を伸ばすほど1単語あたりの火力が上がります。EPIC以上には特殊効果が宿ります。</p>',
+      '<h4>パリィ</h4>',
+      '<p>レーザーの予告線が出ている間に、<em>攻撃モードで単語を打ち切る</em>と、予告を1本はじき返して撃った敵へ反射します',
+      '（雑魚なら最大HPの半分、ボスなら2.5%）。迎撃モードの充填ワードでは発動しません。',
+      '予告が出たら、打ちかけの単語を急いで打ち切ってください。技能「反射神経」で予告時間が延びます。</p>',
+      '<h4>単語の仕掛け</h4>',
+      '<p>一部の敵は単語に仕掛けを持ちます。目標にすると名札が出ます。</p>',
+      '<p><em>分裂</em>（爆撃機）打ち切って倒すと、短い単語の破片2体に分かれる &nbsp; ',
+      '<em>伏字</em>（幽鬼）先の2文字より後ろが＊で隠れる &nbsp; ',
+      '<em>時限</em>（呪縛機）目標にしてから時間内に打てないと単語が変わる &nbsp; ',
+      '<em>鏡像</em>（天輪）単語が左右反転して表示される</p>',
+      '<p>ボスはフェーズが進むごとに 伏字 → 鏡像 → <em>残像</em>（最初の1.3秒だけ見え、その後は次の1文字以外が隠れる）と変化します。',
+      '分裂以外の仕掛けは PILOT 以上で有効です。</p>',
+      '<h4>コンボの節目</h4>',
+      '<p>コンボが <em>50 / 100 / 200 以降100ごと</em>に達すると、自機の周りの敵弾が消え、戦域圧力が下がります（200以降は障壁も全快）。',
+      'ミスをすると節目は遠のきます。被弾ではコンボは半分残ります。</p>',
+      '<h4>訓練と打鍵分析</h4>',
+      '<p>訓練では被弾もレーザーもなく、敵は単語を打ち切るまで落ちません。出題は<em>通常 / 苦手克服 / カスタム単語</em>から選べます。',
+      '任務と訓練でミスしたキー・かな・単語は記録され、<em>分析</em>画面でキーボードの色分けとして見られます。',
+      '苦手克服は、その記録をもとにミスの多い語を優先して出します。</p>',
+      '<h4>デイリー任務</h4>',
+      '<p>宙域1を制圧すると解放。日付で敵・ボス・補正が決まり、機体は全員共通の<em>規格機</em>（LV30 / RARE 装備）です。',
+      '盤面と出題の並びは誰が遊んでも同じなので、記録を共有して競えます。その日の初クリアで 800 CR。</p>',
+      '<h4>技能と実績</h4>',
+      '<p>レベルが1上がるごとに<em>技能ポイント</em>を1得ます。格納庫の「技能」で攻撃・防御・技巧の3系統に振り分けられます（資金を払えば振り直し可）。',
+      '実績は初回の解除時に資金がもらえます。</p>',
+      '<p>自己ベストを持っている任務では、ウェーブを片付けるたびに<em>BEST比</em>（区間タイムの差）が表示されます。</p>',
       '<h4>操作一覧</h4>',
       '<p><span class="kbig">A-Z</span> と <span class="kbig">SPACE</span> タイピング &nbsp; ',
       '<span class="kbig">TAB</span> 攻撃/迎撃 切替 &nbsp; <span class="kbig">SHIFT+TAB</span> 目標を次へ &nbsp; ',
@@ -697,12 +737,298 @@ ST.UI = (function () {
   }
 
   /* ============================================================
+     デイリー任務
+     ============================================================ */
+  function dailyUnlocked() { return !!ST.Save.d.progress.clearedSectors.s1; }
+  function shareText(key, rec, mod) {
+    return 'SPACE TYPING DAILY ' + key + ' [' + mod.n + '] ' +
+      (rec.cleared ? 'CLEAR' : 'WAVE ' + rec.wave) + ' / SCORE ' + U.fmt(rec.score) +
+      ' / RANK ' + rec.rank + ' / ' + rec.kps.toFixed(1) + '打/秒 / 正確率' + rec.acc + '%' +
+      ' (' + ({ ja: '日本語', en: 'ENGLISH', mix: 'MIX' }[rec.lang] || '') + ')';
+  }
+  function copyText(text, msgEl) {
+    var done = function (ok) {
+      if (msgEl) msgEl.textContent = ok ? 'コピーしました' : 'コピーできませんでした。上の文を選択してコピーしてください';
+    };
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+        return;
+      }
+    } catch (e) { /* 下でまとめて扱う */ }
+    done(false);
+  }
+
+  function buildDaily() {
+    var d = ST.Save.d;
+    var cfg = ST.Training.daily();
+    var st = ST.Game.computeStats({ equipped: cfg.loadout, level: cfg.level, noSkills: true });
+    var diff = ST.Difficulty.get(cfg.diffId);
+    var rec = d.daily[cfg.key];
+    var names = cfg.sector.enemies.map(function (k) { return ST.EnemyTypes.T[k].ja; }).join(' / ');
+    var h = '<div class="card daily-card"><div class="c-main">' +
+      '<div class="c-name" style="color:#ffc24d">' + cfg.key + '  日替わり任務</div>' +
+      '<div class="c-desc">補正 <b style="color:#ff4d5e">【' + cfg.mod.n + '】</b> ' + cfg.mod.d + '<br>' +
+      '敵: ' + names + '<br>ボス: ' + ST.EnemyTypes.BOSS[cfg.sector.boss].ja +
+      ' &middot; 難易度 ' + diff.name + ' &middot; WAVE ' + cfg.sector.waves + ' + BOSS</div>' +
+      '<div class="tagrow"><span class="tag">規格機 LV' + cfg.level + '</span>' +
+      '<span class="tag">砲撃力 ' + st.atk.toFixed(0) + '</span>' +
+      '<span class="tag">装甲値 ' + st.maxHp + '</span>' +
+      '<span class="tag">迎撃容量 ' + st.energyMax + '</span>' +
+      '<span class="tag">技能・自分の装備は使えない</span></div>' +
+      '</div><div class="c-side">本日の記録<b>' + (rec ? U.fmt(rec.score) : '-') + '</b>' +
+      (rec ? '<span style="color:#ffc24d">RANK ' + rec.rank + '</span>' : '<span>未挑戦</span>') +
+      '</div></div>';
+    h += '<div class="setrow"><div class="s-lab"><b>初クリア報酬</b><small>その日に初めてクリアすると資金を獲得。装備は落ちません</small></div>' +
+      '<b style="color:' + (rec && rec.cleared ? '#6f8bab' : '#ffc24d') + '">' +
+      (rec && rec.cleared ? '受取済' : '800 CR') + '</b></div>';
+    if (rec) {
+      h += '<div class="loot-title">記録を共有</div><div class="share-box">' + U.esc(shareText(cfg.key, rec, cfg.mod)) + '</div>' +
+        '<div class="detail-actions"><button class="btn" id="btnDailyShare">コピー</button>' +
+        '<span id="dailyShareMsg" style="font-size:10px;color:#6f8bab;align-self:center"></span></div>';
+    }
+    /* 直近の履歴 */
+    var keys = Object.keys(d.daily).sort().reverse().slice(0, 7);
+    if (keys.length) {
+      h += '<div class="loot-title">履歴</div>';
+      keys.forEach(function (k) {
+        var r = d.daily[k];
+        h += '<div class="kv"><span>' + k + '</span><b>' + U.fmt(r.score) + '  RANK ' + r.rank +
+          (r.cleared ? '  CLEAR' : '') + '</b></div>';
+      });
+    }
+    h += '<div style="font-size:9px;color:#3d5570;margin-top:10px;line-height:1.6">盤面と出題は日付で決まり、誰が遊んでも同じ並びになります。' +
+      '出題言語は設定のものを使うので、共有するときは言語も合わせてください。</div>';
+    $('dailyBody').innerHTML = h;
+    var go = $('dailyBody').querySelector('.daily-card');
+    if (go) go.onclick = function () { ST.Audio.play('ok'); startRun(function () { ST.Game.startDaily(); }); };
+    var bs = $('btnDailyShare');
+    if (bs) bs.onclick = function () { copyText(shareText(cfg.key, rec, cfg.mod), $('dailyShareMsg')); };
+  }
+
+  /* 任務へ移るときの共通処理 */
+  function startRun(fn) {
+    show(null);
+    stack.length = 0;
+    fn();
+  }
+
+  /* ============================================================
+     訓練
+     ============================================================ */
+  var trainOpt = { source: 'normal', tier: 2 };
+  var PRACTICE_DESC = ' 全6ウェーブ。報酬はありませんが、打鍵の記録は分析に反映されます。';
+  function buildTraining() {
+    var d = ST.Save.d;
+    var hasData = ST.Training.hasData(d);
+    var nCustom = (d.customWords || []).length;
+    var note = '';
+    if (trainOpt.source === 'weak' && !hasData) note = '分析データがまだありません。任務か訓練を一度遊ぶと苦手が記録されます（それまでは通常の出題）。';
+    if (trainOpt.source === 'custom' && !nCustom) note = 'カスタム単語が登録されていません。下の欄に入力して保存してください。';
+    var h = '<div class="card train-go"><div class="c-main"><div class="c-name">訓練開始</div>' +
+      '<div class="c-desc">被弾・レーザー・戦域圧力なし。敵は撃ってこず、単語を打ち切るまで落ちません。' +
+      PRACTICE_DESC + '</div></div><div class="c-side">START<b>▶</b></div></div>';
+    if (note) h += '<div style="font-size:10px;color:#ffc24d;padding:6px 12px">' + note + '</div>';
+    h += row('出題', '苦手克服はミスの多いキー・かな・単語を優先して出す',
+      seg('trSource', [['normal', '通常'], ['weak', '苦手克服'], ['custom', 'カスタム (' + nCustom + ')']], trainOpt.source));
+    h += row('単語の長さ', 'カスタム単語は近い長さを優先（語数が少なければ全体から）',
+      seg('trTier', [['0', '短い'], ['2', '普通'], ['3', '長い'], ['4', 'とても長い']], String(trainOpt.tier)));
+    h += row('出題言語', '設定画面と共通（カスタム単語には効かない）',
+      seg('trLang', [['ja', '日本語'], ['en', 'ENGLISH'], ['mix', 'MIX']], d.settings.lang));
+
+    h += '<div class="loot-title">カスタム単語</div>' +
+      '<div style="font-size:9px;color:#6f8bab;line-height:1.7;margin-bottom:6px">' +
+      '1行に1語。日本語は <b>よみ,表記,意味</b>（表記と意味は省略可。カタカナは自動で平仮名に）。' +
+      '英語はそのまま書き、<b>タブの後ろ</b>に意味を書けます。# で始まる行は無視します。最大' + ST.Training.CUSTOM_MAX + '語。</div>' +
+      '<textarea id="customText" class="custom-text" spellcheck="false" placeholder="こうせい,恒星,fixed star&#10;じゅうりょく,重力&#10;photosynthesis">' +
+      U.esc(ST.Training.formatCustom(d.customWords)) + '</textarea>' +
+      '<div class="detail-actions"><button class="btn primary" id="btnCustomSave">保存</button>' +
+      '<button class="btn ghost" id="btnCustomClear">全消去</button></div>' +
+      '<div id="customMsg" style="font-size:10px;margin-top:6px"></div>';
+    $('trainingBody').innerHTML = h;
+
+    bindSeg('trSource', function (v) { trainOpt.source = v; buildTraining(); });
+    bindSeg('trTier', function (v) { trainOpt.tier = parseInt(v, 10); });
+    bindSeg('trLang', function (v) { d.settings.lang = v; ST.Save.save(); });
+    var go = $('trainingBody').querySelector('.train-go');
+    if (go) go.onclick = startTraining;
+    $('btnCustomSave').onclick = function () { saveCustom($('customText').value); };
+    var clr = $('btnCustomClear'), armed = false;
+    clr.onclick = function () {
+      if (!armed) { armed = true; clr.textContent = '本当に消去する？'; ST.Audio.play('deny'); return; }
+      ST.Save.d.customWords = [];
+      ST.Save.save();
+      buildTraining();
+    };
+  }
+  function startTraining() {
+    if (trainOpt.source === 'custom' && !(ST.Save.d.customWords || []).length) { ST.Audio.play('deny'); return; }
+    ST.Audio.play('ok');
+    startRun(function () { ST.Game.startPractice({ source: trainOpt.source, tier: trainOpt.tier }); });
+  }
+
+  function saveCustom(text) {
+    var res = ST.Training.parseCustom(text);
+    ST.Save.d.customWords = res.words;
+    ST.Save.save();
+    buildTraining();
+    var msg = '<span style="color:#59ff9e">' + res.words.length + ' 語を登録しました。</span>';
+    if (res.errors.length) {
+      msg += '<br><span style="color:#ff4d5e">' + res.errors.slice(0, 5).map(U.esc).join('<br>') +
+        (res.errors.length > 5 ? '<br>ほか ' + (res.errors.length - 5) + ' 件' : '') + '</span>';
+    }
+    $('customMsg').innerHTML = msg;
+    ST.Audio.play(res.words.length ? 'ok' : 'deny');
+    return res;
+  }
+
+  /* ============================================================
+     打鍵分析
+     ============================================================ */
+  var KB_ROWS = ['1234567890-', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm,./'];
+  var KB_MIN = 15;             /* これ未満の標本は色を付けない */
+  function heat(rate) {
+    var k = U.clamp(rate / 0.12, 0, 1);       /* ミス率12%で真っ赤 */
+    var r = Math.round(30 + k * 225), g = Math.round(90 - k * 30), b = Math.round(130 - k * 60);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + (0.25 + k * 0.6).toFixed(2) + ')';
+  }
+  function keyCell(a, ch, label, extra) {
+    var v = a.keys[ch];
+    var n = v ? v[0] + v[1] : 0;
+    var rate = n ? v[1] / n : 0;
+    var bg = n >= KB_MIN ? heat(rate) : 'rgba(10,18,36,.6)';
+    return '<div class="kb-key' + (extra || '') + '" style="background:' + bg + '"><span>' + U.esc(label) + '</span>' +
+      '<small>' + (n >= KB_MIN ? (rate * 100).toFixed(1) + '%' : '-') + '</small></div>';
+  }
+  function buildAnalysis() {
+    var d = ST.Save.d;
+    var a = ST.Training.analysis(d);
+    var tot = [0, 0];
+    for (var k in a.keys) { tot[0] += a.keys[k][0]; tot[1] += a.keys[k][1]; }
+    if (!tot[1] && !tot[0]) {
+      $('analysisBody').innerHTML = '<div style="color:#6f8bab;font-size:11px;padding:20px;text-align:center">' +
+        'まだ記録がありません。任務か訓練を遊ぶと、ここに苦手なキーが表示されます。</div>';
+      return;
+    }
+    var h = '<div class="kv"><span>記録した打鍵</span><b>' + U.fmt(tot[0] + tot[1]) + '</b></div>';
+    h += '<div class="kv"><span>正確率</span><b>' + U.pct(tot[0], tot[0] + tot[1]) + '%</b></div>';
+    h += '<div class="loot-title">キー別ミス率（打つべきだったキー）</div><div class="kb">';
+    KB_ROWS.forEach(function (rowS, ri) {
+      h += '<div class="kb-row" style="padding-left:' + (ri * 14) + 'px">';
+      rowS.split('').forEach(function (ch) { h += keyCell(a, ch, ch.toUpperCase()); });
+      h += '</div>';
+    });
+    h += '<div class="kb-row">' + keyCell(a, ' ', 'SPACE', ' kb-space') + '</div></div>';
+
+    var wk = ST.Training.weakKeys(a, 6, KB_MIN);
+    var wkana = ST.Training.weakKana(a, 8);
+    var ww = ST.Training.weakWords(a, 8);
+    var list = function (title, arr, fmt) {
+      return '<div><div class="loot-title">' + title + '</div>' +
+        (arr.length ? arr.map(fmt).join('') : '<div class="kv"><span>-</span></div>') + '</div>';
+    };
+    h += '<div class="an-cols">' +
+      list('苦手なキー', wk, function (x) {
+        return '<div class="kv"><span>' + U.esc(x.ch === ' ' ? 'SPACE' : x.ch.toUpperCase()) + '</span><b>' +
+          (x.rate * 100).toFixed(1) + '% (' + x.miss + '/' + (x.ok + x.miss) + ')</b></div>';
+      }) +
+      list('ミスの多いかな', wkana, function (x) {
+        return '<div class="kv"><span>' + U.esc(x.k) + '</span><b>' + x.n.toFixed(1) + '</b></div>';
+      }) +
+      list('ミスの多い単語', ww, function (x) {
+        return '<div class="kv"><span>' + U.esc(x.w.kana || x.w.text) + '</span><b>' + x.n.toFixed(1) + '</b></div>';
+      }) + '</div>';
+    h += '<div style="font-size:9px;color:#3d5570;margin-top:6px">かなと単語の回数は任務ごとに少しずつ減衰します（克服すると順位が下がる）。</div>';
+    h += '<div class="detail-actions"><button class="btn primary" id="btnWeakTrain">苦手克服で訓練する</button>' +
+      '<button class="btn ghost" id="btnAnReset">記録を消去</button></div>';
+    $('analysisBody').innerHTML = h;
+    $('btnWeakTrain').onclick = function () {
+      trainOpt.source = 'weak';
+      ST.Audio.play('ok');
+      show('scr-training', true);
+    };
+    var rst = $('btnAnReset'), armed = false;
+    rst.onclick = function () {
+      if (!armed) { armed = true; rst.textContent = '本当に消去する？'; ST.Audio.play('deny'); return; }
+      d.analysis = { keys: {}, kana: {}, words: {} };
+      ST.Save.save();
+      buildAnalysis();
+    };
+  }
+
+  /* ============================================================
+     技能
+     ============================================================ */
+  function buildSkills() {
+    var d = ST.Save.d, p = d.pilot, S = ST.Skills;
+    var h = '<div class="skill-head"><span>技能ポイント <b>' + p.statPoints + '</b></span>' +
+      '<span>使用済 ' + S.spent(p) + '</span>' +
+      '<span style="color:#6f8bab">レベルが1上がるごとに1ポイント</span>' +
+      '<button class="btn ghost" id="btnRespec">振り直し ' + U.fmt(S.respecCost(p)) + ' CR</button></div>';
+    h += '<div class="skill-grid">';
+    S.TREE.forEach(function (b) {
+      h += '<div class="skill-col"><div class="skill-branch" style="color:' + b.color + '">' + b.ja + '  ' + b.en + '</div>';
+      b.skills.forEach(function (sk) {
+        var r = S.rank(p, sk.id);
+        var can = S.canLearn(p, sk.id);
+        var reqOk = !sk.req || S.rank(p, sk.req) >= 1;
+        var cls = r >= sk.max ? ' maxed' : (can ? ' can' : (!reqOk ? ' locked' : ''));
+        var pips = '';
+        for (var i = 0; i < sk.max; i++) pips += i < r ? '●' : '○';
+        h += '<div class="card skill' + cls + '" data-skill="' + sk.id + '">' +
+          '<div class="sk-name">' + sk.n + '<span class="sk-pips" style="color:' + b.color + '">' + pips + '</span></div>' +
+          '<div class="sk-desc">' + (r ? '現在: ' + S.describe(sk, r) : '1ランク: ' + S.describe(sk, 1)) +
+          (r && r < sk.max ? '<br>次: ' + S.describe(sk, r + 1) : '') + '</div>' +
+          (!reqOk ? '<div class="sk-req">要: ' + S.MAP[sk.req].n + '</div>' : '') +
+          '</div>';
+      });
+      h += '</div>';
+    });
+    h += '</div><div id="skillMsg" style="font-size:10px;margin-top:8px;color:#6f8bab"></div>';
+    $('skillsBody').innerHTML = h;
+    var cards = $('skillsBody').querySelectorAll('.skill');
+    for (var i = 0; i < cards.length; i++) {
+      (function (c) {
+        c.onclick = function () {
+          if (S.learn(p, c.getAttribute('data-skill'))) { ST.Save.save(); ST.Audio.play('ok'); buildSkills(); }
+          else ST.Audio.play('deny');
+        };
+      })(cards[i]);
+    }
+    var rs = $('btnRespec'), armed = false;
+    rs.onclick = function () {
+      if (!S.spent(p)) { ST.Audio.play('deny'); return; }
+      if (!armed) { armed = true; rs.textContent = '本当に振り直す？'; ST.Audio.play('deny'); return; }
+      if (S.respec(p)) { ST.Save.save(); ST.Audio.play('ok'); buildSkills(); }
+      else { ST.Audio.play('deny'); $('skillMsg').textContent = '資金が足りません。'; }
+    };
+  }
+
+  /* ============================================================
+     実績
+     ============================================================ */
+  function buildAchieve() {
+    var d = ST.Save.d, A = ST.Achievements;
+    var h = '<div class="credits">' + A.count(d) + ' / ' + A.LIST.length + ' 解除</div>';
+    A.LIST.forEach(function (a) {
+      var t = d.achievements[a.id];
+      h += '<div class="ach' + (t ? ' got' : '') + '"><span class="ach-mark">' + (t ? '★' : '☆') + '</span>' +
+        '<div class="ach-main"><b>' + a.n + '</b><small>' + a.d + '</small></div>' +
+        '<span class="ach-cr">' + (t ? new Date(t).toLocaleDateString() : '+' + U.fmt(a.cr) + ' CR') + '</span></div>';
+    });
+    $('achieveBody').innerHTML = h;
+  }
+
+  /* ============================================================
      ポーズ
      ============================================================ */
   function buildPause() {
     var m = $('pauseMenu');
     m.innerHTML = '';
     m.appendChild(menuItem('再 開  RESUME', function () { ST.Game.resume(); }));
+    if (ST.Game.run && ST.Game.run.practice) {
+      m.appendChild(menuItem('訓練を終える  FINISH', function () { ST.Game.endPractice(); }));
+    }
     m.appendChild(menuItem('遊 び 方  HELP', function () { show('scr-help', true); }));
     m.appendChild(menuItem('撤 退  ABORT', function () {
       ST.Game.quit(); show('scr-title'); stack.length = 0;
@@ -714,8 +1040,11 @@ ST.UI = (function () {
      ============================================================ */
   var RANK_COLOR = { SS: '#ff4dd2', S: '#ffc24d', A: '#59ff9e', B: '#4da6ff', C: '#cfe6ff', D: '#9fb4c9', E: '#6f8bab' };
   function showResult(res) {
-    $('resultTitle').textContent = res.cleared ? 'MISSION COMPLETE' : 'MISSION FAILED';
-    $('resultTitle').style.color = res.cleared ? '#59ff9e' : '#ff4d5e';
+    var title = res.cleared ? 'MISSION COMPLETE' : 'MISSION FAILED';
+    if (res.practice) title = res.cleared ? 'TRAINING COMPLETE' : 'TRAINING END';
+    else if (res.daily) title = res.cleared ? 'DAILY COMPLETE' : 'DAILY FAILED';
+    $('resultTitle').textContent = title;
+    $('resultTitle').style.color = res.cleared ? '#59ff9e' : (res.practice ? '#4df3ff' : '#ff4d5e');
 
     var h = '<div class="rank-badge" style="color:' + (RANK_COLOR[res.rank] || '#fff') + '">' + res.rank + '</div>';
     h += '<div class="res-grid">';
@@ -732,14 +1061,44 @@ ST.UI = (function () {
     });
     h += '</div>';
 
-    h += '<div class="kv"><span>獲得経験値</span><b class="up">+' + U.fmt(res.exp) + ' EXP</b></div>';
-    h += '<div class="kv"><span>獲得資金</span><b class="up">+' + U.fmt(res.credits) + ' CR</b></div>';
-
-    if (res.levels.levels > 0) {
-      h += '<div class="levelup">LEVEL UP!  ' + res.levels.from + ' → ' + res.levels.to + '</div>';
+    if (res.ghostDelta != null) {
+      var gd = res.ghostDelta;
+      h += '<div class="kv"><span>自己ベスト比</span><b style="color:' + (gd <= 0 ? '#59ff9e' : '#ff4d5e') + '">' +
+        (gd <= 0 ? '-' : '+') + Math.abs(gd).toFixed(1) + 's' + (res.ghostNew ? '  更新!' : '') + '</b></div>';
+    }
+    if (res.parries) h += '<div class="kv"><span>パリィ</span><b>' + res.parries + '</b></div>';
+    if (res.weakKeys && res.weakKeys.length) {
+      h += '<div class="kv"><span>この任務の苦手キー</span><b>' + res.weakKeys.map(function (x) {
+        return U.esc(x.ch === ' ' ? 'SPACE' : x.ch.toUpperCase()) + ' (' + x.miss + ')';
+      }).join('  ') + '</b></div>';
     }
 
-    if (res.loot.length) {
+    if (!res.practice) {
+      h += '<div class="kv"><span>獲得経験値</span><b class="up">+' + U.fmt(res.exp) + ' EXP</b></div>';
+      h += '<div class="kv"><span>獲得資金</span><b class="up">+' + U.fmt(res.credits) + ' CR' +
+        (res.dailyBonus ? '（初クリア +' + U.fmt(res.dailyBonus) + '）' : '') + '</b></div>';
+    }
+
+    if (res.levels.levels > 0) {
+      h += '<div class="levelup">LEVEL UP!  ' + res.levels.from + ' → ' + res.levels.to +
+        '  （技能ポイント +' + res.levels.levels + '）</div>';
+    }
+
+    (res.achievements || []).forEach(function (a) {
+      h += '<div class="ach-new">★ 実績解除【' + a.n + '】' + a.d + '  +' + U.fmt(a.cr) + ' CR</div>';
+    });
+
+    if (res.daily) {
+      var rec = ST.Save.d.daily[res.daily.key];
+      if (rec) {
+        h += '<div class="loot-title">記録を共有（本日のベスト）</div><div class="share-box">' +
+          U.esc(shareText(res.daily.key, rec, res.daily.mod)) + '</div>' +
+          '<div class="detail-actions"><button class="btn" id="btnResShare">コピー</button>' +
+          '<span id="resShareMsg" style="font-size:10px;color:#6f8bab;align-self:center"></span></div>';
+      }
+    } else if (res.practice) {
+      /* 訓練は戦利品がない */
+    } else if (res.loot.length) {
       h += '<div class="loot-title">戦利品 ' + res.loot.length + '件</div>';
       res.loot.forEach(function (it) {
         var u = it.unique ? I.uniqueDef(it.unique) : null;
@@ -756,6 +1115,10 @@ ST.UI = (function () {
         res.overflow + ' 個を自動売却しました (+' + U.fmt(res.overflowCr) + ' CR)</div>';
     }
     $('resultBody').innerHTML = h;
+    var rsb = $('btnResShare');
+    if (rsb && res.daily) rsb.onclick = function () {
+      copyText(shareText(res.daily.key, ST.Save.d.daily[res.daily.key], res.daily.mod), $('resShareMsg'));
+    };
     $('btnResultOk').onclick = function () {
       ST.Audio.play('ok');
       ST.Game.quit();

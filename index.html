@@ -36,6 +36,7 @@
         <div class="hud-center">
           <div id="sectorName">SECTOR 1</div>
           <div id="waveInfo">WAVE 1 / 5</div>
+          <div id="ghostDelta" class="hidden"></div>
           <div id="pressureWrap">
             <span id="pressureLabel">戦域圧力</span>
             <div class="bar pr"><div class="bar-fill" id="prFill"></div></div>
@@ -134,6 +135,7 @@
           </div>
         </div>
         <div class="scr-foot">
+          <button class="btn" id="btnSkills">技能 SKILLS</button>
           <button class="btn" id="btnShop">補給ドック (ガチャ / 売却)</button>
           <button class="btn ghost" data-back>戻る</button>
         </div>
@@ -154,6 +156,36 @@
       <section id="scr-help" class="screen">
         <h2 class="scr-title">HOW TO PLAY / 遊び方</h2>
         <div id="helpBody" class="scroll"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-daily" class="screen">
+        <h2 class="scr-title">DAILY OPS / デイリー任務</h2>
+        <div id="dailyBody" class="scroll"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-training" class="screen">
+        <h2 class="scr-title">TRAINING / 訓練</h2>
+        <div id="trainingBody" class="scroll"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-analysis" class="screen">
+        <h2 class="scr-title">ANALYSIS / 打鍵分析</h2>
+        <div id="analysisBody" class="scroll"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-skills" class="screen">
+        <h2 class="scr-title">PILOT SKILLS / 技能</h2>
+        <div id="skillsBody" class="scroll"></div>
+        <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
+      </section>
+
+      <section id="scr-achieve" class="screen">
+        <h2 class="scr-title">ACHIEVEMENTS / 実績</h2>
+        <div id="achieveBody" class="scroll"></div>
         <div class="scr-foot"><button class="btn ghost" data-back>戻る</button></div>
       </section>
 
@@ -178,6 +210,9 @@
 <script src="js/items.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/stages.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/achievements.js"></script>
+<script src="js/training.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/game.js"></script>
 </body>
