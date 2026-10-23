@@ -108,6 +108,11 @@ body.no-crt #scanlines{display:none}
 #missLockBar{height:100%;background:linear-gradient(90deg,#ff2d55,#ff8a5c);
   transform-origin:left center}
 #missLockMs{font-size:10px;color:#ffb3bd;width:38px;text-align:right}
+#imeWarn{display:flex;align-items:center;gap:10px;padding:4px 14px;
+  border:1px solid var(--amber);background:rgba(50,34,4,.92);
+  box-shadow:0 0 22px rgba(255,194,77,.45);animation:missPop .12s ease-out}
+#imeWarn .ime-label{font-size:13px;font-weight:700;letter-spacing:3px;color:var(--amber)}
+#imeWarn .ime-text{font-size:11px;letter-spacing:1px;color:#ffe2a8}
 @keyframes missPop{from{transform:scale(.86);opacity:.4}to{transform:scale(1);opacity:1}}
 /* 硬直中は単語パネルを沈めて「今は打っても無駄」と分かるようにする */
 #wordPanel.locked{opacity:.35;filter:grayscale(.7)}
@@ -225,6 +230,8 @@ kbd{border:1px solid var(--edge);padding:0 4px;border-radius:2px;color:var(--cya
 .itemrow .ir-lv{font-size:9px;color:var(--txt-dim);width:30px;flex:none}
 .itemrow .ir-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .itemrow .ir-e{color:var(--green);font-size:9px}
+.itemrow .ir-lock{font-size:8px;letter-spacing:1px;color:var(--amber);border:1px solid rgba(255,194,77,.5);
+  padding:0 3px;flex:none}
 
 .r-common{color:var(--r-common)} .r-uncommon{color:var(--r-uncommon)}
 .r-rare{color:var(--r-rare)} .r-epic{color:var(--r-epic)}

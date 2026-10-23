@@ -288,6 +288,8 @@ function testUI() {
     $('invList').querySelectorAll('.itemrow')[0].onclick();
     ST.UI.show('scr-shop', true);
     $('btnSellJunk').onclick();
+    ok('1回目は確認だけで売却しない', d.inventory.indexOf(junk) >= 0);
+    $('btnSellJunk').onclick();
     const credits = d.pilot.credits;
     ST.UI.back();
     ok('所持数が0に更新される', invCount($).indexOf('0 /') === 0, invCount($));
@@ -580,7 +582,7 @@ function testControls() {
   {
     const { c, ST, run, step } = setup(80);
     run.s.correct = 120;
-    run.s.elapsed = 20;         /* 6.0 打/秒 */
+    run.s.elapsed = 20; run.s.activeT = 20;   /* 6.0 打/秒 */
     step(10);
     const shown = c.document.getElementById('kpsVal').textContent;
     ok('HUD が小数1桁で出す', shown === '6.0', shown);
@@ -598,7 +600,7 @@ function testControls() {
     const run = ST.Game.run;
     let t = 0;
     for (let i = 0; i < 7200 && ST.Game.state === 'playing'; i++) {
-      run.s.correct = 120; run.s.elapsed = 20;   /* 6.0 打/秒 に固定 */
+      run.s.correct = 120; run.s.elapsed = 20; run.s.activeT = 20;   /* 6.0 打/秒 に固定 */
       run.player.hp = Math.min(run.player.hp, 1);
       run.player.shield = 0;
       t += 1000 / 60; c._t = t;
@@ -700,9 +702,186 @@ function testJitter() {
 }
 
 /* ============================================================
+   7. 操作感の修正（打鍵が消える・遅れる問題など）
+   ============================================================ */
+function testFixes() {
+  const { equip } = require('./sim');
+  const setup = (seed) => {
+    const c = boot({ seed: seed });
+    const ST = c.ST;
+    equip(ST, { level: 40, ilvl: 40, rarity: 'epic' });
+    ST.Game.start('s4', 'ace');
+    const run = ST.Game.run;
+    let t = 0;
+    const step = (n) => {
+      for (let i = 0; i < (n || 1); i++) {
+        run.player.hp = run.player.maxHp;
+        t += 1000 / 60; c._t = t;
+        c._takeRaf().forEach(cb => cb(t));
+      }
+    };
+    const type = (s) => { for (const ch of s) c.key(ch); };
+    const $ = (id) => c.document.getElementById(id);
+    return { c, ST, run, step, type, $ };
+  };
+  /* 迎撃ワードを差し替える。打ち切ると次のワードが自動で入るので、そのたびに呼ぶ */
+  const setIc = (ST, run, word) => {
+    run.ic.word = word;
+    run.ic.matcher = ST.Romaji.create(word);
+    return run.ic.matcher;
+  };
+
+  head('[修正] 語尾「ん」の直後に n で始まる単語を打っても消えない');
+  {
+    const { ST, run, type } = setup(90);
+    run.mode = 'intercept';
+    run.stun = 0;
+    const cases = [
+      ['kan', 'なみ', 'nami', 'n 1打の「ん」 → なみ'],
+      ['kann', 'なみ', 'nami', 'nn の「ん」 → なみ'],
+      ['kan', 'なみ', 'nnami', '余剰 n を挟んで → なみ'],
+      ['kan', 'のうりょく', 'nouryoku', 'n 1打の「ん」 → のうりょく'],
+      ['kan', null, 'night', 'n 1打の「ん」 → 英単語 night']
+    ];
+    cases.forEach(([first, kana, input, label]) => {
+      run.stun = 0;
+      const miss0 = run.s.miss, words0 = run.s.words;
+      setIc(ST, run, { kana: 'かん', text: 'かん' });
+      type(first);
+      setIc(ST, run, kana ? { kana, text: kana } : { text: 'night' });
+      type(input);
+      ok(label + ' がミスにならない', run.s.miss === miss0, 'miss +' + (run.s.miss - miss0));
+      ok(label + ' が2語とも完成する', run.s.words === words0 + 2, 'words +' + (run.s.words - words0));
+    });
+    /* n で始まらない単語なら、従来どおり余剰 n は吸収される */
+    run.stun = 0;
+    const miss0 = run.s.miss;
+    setIc(ST, run, { kana: 'かん', text: 'かん' });
+    type('kan');
+    setIc(ST, run, { kana: 'そら', text: 'そら' });
+    type('nsora');
+    ok('n で始まらない単語の前の余剰 n は吸収される', run.s.miss === miss0);
+  }
+
+  head('[修正] オーバーキル直後の猶予は「倒した単語の残り」だけを吸収する');
+  {
+    const { ST, run, step, type } = setup(91);
+    step(200);
+    ok('目標がいる', !!run.target);
+    if (run.target) {
+      run.mode = 'attack';
+      run.stun = 0;
+      const tgt = run.target;
+      tgt.matcher = ST.Romaji.create({ text: 'zeta' });
+      run.grace = 0.4;
+      run.graceM = ST.Romaji.create({ text: 'lpha' });
+      const miss0 = run.s.miss;
+      type('lp');
+      ok('残りの文字は吸収される', tgt.matcher.count === 0 && run.s.miss === miss0);
+      type('z');
+      ok('残りと違う文字で次の敵へ入る', tgt.matcher.count === 1, tgt.matcher.count);
+      ok('猶予が打ち切られる', run.grace <= 0);
+      ok('ミスにならない', run.s.miss === miss0);
+    }
+  }
+
+  head('[修正] 単語パネルが打鍵の次のフレームで更新される');
+  {
+    const { ST, run, step, type, $ } = setup(92);
+    run.mode = 'intercept';
+    run.stun = 0;
+    setIc(ST, run, { text: 'starlight' });
+    step(7);                /* 間引きの周期をずらしておく */
+    type('st');
+    step(1);
+    ok('打った文字がすぐ出る', $('wDone').textContent === 'st', $('wDone').textContent);
+    type('a');
+    step(1);
+    ok('次の打鍵も1フレームで出る', $('wDone').textContent === 'sta', $('wDone').textContent);
+  }
+
+  head('[修正] IME オンの警告と全角英数の受理');
+  {
+    const { c, ST, run, $ } = setup(93);
+    run.mode = 'intercept';
+    run.stun = 0;
+    $('imeWarn').classList.add('hidden');   /* スタブは HTML の class を持たないので明示 */
+    c.key('Process');
+    ok('IME の打鍵で警告が出る', !$('imeWarn').classList.contains('hidden'));
+    const m = setIc(ST, run, { text: 'ab' });
+    c.key('ａ');
+    ok('全角 ａ を a として受理する', m.count === 1, m.count);
+  }
+
+  head('[修正] 打/秒 はウェーブ間の時間を含めない');
+  {
+    const { run, step } = setup(94);
+    step(30);               /* 開幕の演出中 */
+    ok('演出中は戦闘時間が進まない', run.s.activeT === 0 && run.s.elapsed > 0,
+      run.s.activeT + ' / ' + run.s.elapsed);
+    step(200);
+    ok('戦闘が始まると進む', run.s.activeT > 0);
+  }
+
+  head('[修正] 被弾でコンボは全損せず半減する');
+  {
+    const { run, step } = setup(95);
+    step(200);
+    const e = run.enemies.find(x => !x.boss && !x.dead);
+    ok('雑魚がいる', !!e);
+    if (e) {
+      run.s.combo = 40;
+      const hits0 = run.s.hits;
+      e.y = 900;           /* 画面下へ突破させる */
+      step(1);
+      ok('被弾が起きる', run.s.hits > hits0);
+      ok('コンボが残る', run.s.combo > 0 && run.s.combo < 40, run.s.combo);
+    }
+  }
+
+  head('[修正] 所持上限は価値の低いものから削る');
+  {
+    const ST = boot({ seed: 96 }).ST;
+    const I = ST.Items;
+    const inv = [];
+    const legend = I.generate(10, { rarity: 'legendary' });
+    inv.push(legend);                                   /* 最古の LEGENDARY */
+    const locked = I.generate(10, { rarity: 'common' });
+    locked.locked = true;
+    inv.push(locked);
+    for (let i = 0; i < 60; i++) inv.push(I.generate(10, { rarity: 'rare' }));
+    for (let i = 0; i < 70; i++) inv.push(I.generate(10, { rarity: 'common' }));
+    const removed = I.trimInventory(inv);
+    ok('上限まで減る', inv.length === I.INV_MAX, inv.length);
+    ok('古い LEGENDARY が残る', inv.indexOf(legend) >= 0);
+    ok('ロックした COMMON が残る', inv.indexOf(locked) >= 0);
+    ok('削られたのは COMMON だけ', removed.length === 12 && removed.every(it => it.rarity === 'common'));
+  }
+
+  head('[修正] ロックした装備は売却できない');
+  {
+    const c = boot({ seed: 97 });
+    const ST = c.ST, d = ST.Save.d;
+    const $ = (id) => c.document.getElementById(id);
+    const a = ST.Items.generate(10, { rarity: 'common' });
+    const b = ST.Items.generate(10, { rarity: 'common' });
+    a.locked = true;
+    d.inventory.push(a, b);
+    ST.UI.show('scr-shop', true);
+    $('btnSellJunk').onclick();
+    $('btnSellJunk').onclick();
+    ok('一括売却でロック品が残る', d.inventory.indexOf(a) >= 0 && d.inventory.indexOf(b) < 0);
+    ST.UI.show('scr-hangar', true);
+    $('invList').querySelectorAll('.itemrow')[0].onclick();
+    ok('ロック品には売却ボタンが出ない', !$('itemDetail').innerHTML.includes('btnSell'));
+    ok('ロック解除ボタンが出る', $('itemDetail').innerHTML.includes('ロック解除'));
+  }
+}
+
+/* ============================================================
    実行
    ============================================================ */
-const SUITES = { romaji: testRomaji, play: testPlay, render: testRender, ui: testUI, controls: testControls, jitter: testJitter };
+const SUITES = { romaji: testRomaji, play: testPlay, render: testRender, ui: testUI, controls: testControls, jitter: testJitter, fixes: testFixes };
 const arg = (process.argv[2] || 'all').toLowerCase();
 const list = arg === 'all' ? Object.keys(SUITES) : [arg];
 

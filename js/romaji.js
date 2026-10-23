@@ -160,11 +160,11 @@ ST.Romaji = (function () {
     for (var i = 0; i < cands.length; i++) arr.push({ s: segIdx, c: i, p: 0 });
     return false;
   };
-  KanaMatcher.prototype.feed = function (ch) {
-    if (this.done) return 'done';
+  /* 状態集合を1文字ぶん前進させる（自身は変更しない） */
+  KanaMatcher.prototype._step = function (states, ch) {
     var next = [], complete = false, singleN = false;
-    for (var i = 0; i < this.states.length; i++) {
-      var st = this.states[i];
+    for (var i = 0; i < states.length; i++) {
+      var st = states[i];
       var cand = this.segs[st.s].cands[st.c];
       if (cand.charAt(st.p) !== ch) continue;
       var np = st.p + 1;
@@ -178,12 +178,31 @@ ST.Romaji = (function () {
         next.push({ s: st.s, c: st.c, p: np });
       }
     }
+    return { next: next, complete: complete, singleN: singleN };
+  };
+  KanaMatcher.prototype.feed = function (ch) {
+    if (this.done) return 'done';
+    var r = this._step(this.states, ch);
+    var next = r.next, complete = r.complete, singleN = r.singleN;
     if (!next.length && !complete) return 'miss';
     this.typed += ch;
     this.count++;
     this.states = next;
     if (complete) { this.done = true; this.swallowN = singleN; return 'done'; }
     return 'ok';
+  };
+  /* seq を続けて打ったとき受理されるかを、状態を変えずに調べる。
+     途中で単語が完成した場合、その先は次の単語の話なので受理とみなす。 */
+  KanaMatcher.prototype.accepts = function (seq) {
+    if (this.done) return false;
+    var states = this.states;
+    for (var i = 0; i < seq.length; i++) {
+      var r = this._step(states, seq.charAt(i));
+      if (r.complete) return true;
+      if (!r.next.length) return false;
+      states = r.next;
+    }
+    return true;
   };
   KanaMatcher.prototype.firstChars = function () {
     var set = {};
@@ -255,6 +274,14 @@ ST.Romaji = (function () {
     this.count++; this.typed += ch;
     if (this.count >= this.total) { this.done = true; return 'done'; }
     return 'ok';
+  };
+  AsciiMatcher.prototype.accepts = function (seq) {
+    if (this.done) return false;
+    for (var i = 0; i < seq.length; i++) {
+      if (this.count + i >= this.total) return true;
+      if (this.src.charAt(this.count + i) !== seq.charAt(i)) return false;
+    }
+    return true;
   };
   AsciiMatcher.prototype.firstChars = function () {
     return this.done ? [] : [this.src.charAt(this.count)];

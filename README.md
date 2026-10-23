@@ -63,12 +63,12 @@
 | s3/PILOT (LV16 Uncommon) | 16/16 |
 | s4/ACE (LV24 Rare) | 16/16 |
 | s6/VETERAN (LV34 Legendary) | 16/16 |
-| s6/VETERAN (LV30 Epic — 装備不足) | 11/16 |
-| **s8/NIGHTMARE (LV30 Legendary)** | **10/16** |
-| s8/NIGHTMARE (LV70 Legendary) | 15/16 |
-| **s8/SINGULARITY (LV30 Legendary)** | **6/16** |
+| s6/VETERAN (LV30 Epic — 装備不足) | 12/16 |
+| **s8/NIGHTMARE (LV30 Legendary)** | **11/16** |
+| s8/NIGHTMARE (LV70 Legendary) | 16/16 |
+| **s8/SINGULARITY (LV30 Legendary)** | **7/16** |
 | s8/SINGULARITY (LV70 Legendary) | 13/16 |
-| s8/SINGULARITY (LV30 Legendary ×4) | 1/16 |
+| s8/SINGULARITY (LV30 Legendary ×4) | 3/16 |
 
 装備スロットを5つ埋めるか4つかで結果が大きく変わる（最下段が4個構成）。
 またこれは**ミス率0%**での値で、ミス率5%だと上位難易度は非線形に崩れる
@@ -115,6 +115,8 @@ SINGULARITY の圧力100%では毎秒130前後のダメージとなり、数秒�
 - `しゅっぱつ` = `shuppatsu` / `syuppatu` / `shixyuppatsu` / `silyuppatu`
 - `じゃあく` = `jaaku` / `jyaaku` / `zyaaku` / `jixyaaku`
 - `こうしん` = `koushin` / `koushinn`（語尾「ん」の余剰 `n` は吸収する）
+  - ただし次の単語が `n` で始まる場合（`なみ` など）は、その `n` を捨てずに判断を保留し、
+    続く1打で「余剰の `n`」か「次の単語の頭」かを決める（`game.js` の `pendingN`）
 
 逆に IME と同様、`ぎんが` に対する `ginka` や、`てんのう` に対する `tennou`
 （= てんおう になる）は正しく **ミス**として弾く。

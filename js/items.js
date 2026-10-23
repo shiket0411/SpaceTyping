@@ -233,10 +233,39 @@ ST.Items = (function () {
     return out;
   }
 
+  /* ---- 所持上限 ----
+     上限を超えたら、ロックされていないものの中から
+     レアリティが低い順 → 性能が低い順 → 古い順に取り除く。
+     （古い順に捨てると、昔拾った LEGENDARY が黙って消える）
+     取り除いた装備の配列を返す。inv はその場で書き換える。 */
+  var INV_MAX = 120;
+  function trimInventory(inv, max) {
+    max = max || INV_MAX;
+    if (inv.length <= max) return [];
+    var idx = [];
+    for (var i = 0; i < inv.length; i++) if (!inv[i].locked) idx.push(i);
+    idx.sort(function (a, b) {
+      var ta = RMAP[inv[a].rarity] ? RMAP[inv[a].rarity].tier : 0;
+      var tb = RMAP[inv[b].rarity] ? RMAP[inv[b].rarity].tier : 0;
+      if (ta !== tb) return ta - tb;
+      var pa = powerOf(inv[a]), pb = powerOf(inv[b]);
+      if (pa !== pb) return pa - pb;
+      return a - b;
+    });
+    var cut = idx.slice(0, inv.length - max);
+    var drop = {};
+    cut.forEach(function (j) { drop[j] = true; });
+    var removed = [], kept = [];
+    for (var k = 0; k < inv.length; k++) (drop[k] ? removed : kept).push(inv[k]);
+    inv.length = 0;
+    for (var m = 0; m < kept.length; m++) inv.push(kept[m]);
+    return removed;
+  }
+
   return {
     RARITY: RARITY, RMAP: RMAP, SLOTS: SLOTS, AFFIX: AFFIX, AMAP: AMAP, UNIQUES: UNIQUES,
     generate: generate, sellPrice: sellPrice, affixLabel: affixLabel, uniqueDef: uniqueDef,
     aggregate: aggregate, blankStats: blankStats, compare: compare, powerOf: powerOf,
-    rollRarity: rollRarity
+    rollRarity: rollRarity, trimInventory: trimInventory, INV_MAX: INV_MAX
   };
 })();

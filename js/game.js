@@ -12,6 +12,7 @@ ST.Game = (function () {
   var state = 'idle';         /* idle | playing | paused | ending */
   var run = null;
   var swallowNT = 0;          /* 語尾「ん」の余剰 n 吸収タイマー */
+  var pendingN = false;       /* 余剰 n か次の単語の頭か、次の打鍵まで判断を保留している n */
   var shake = { t: 0, m: 0 };
   var flash = { t: 0, c: '#fff', a: 0 };
   var hudT = 0;
@@ -168,12 +169,13 @@ ST.Game = (function () {
       threat: 0,
       od: { gauge: 0, active: 0, ready: false },
       grace: 0,                  /* オーバーキル後の入力吸収 */
+      graceM: null,              /* 吸収の照合に使う、倒した敵の単語 */
       stun: 0, stunMax: 1,
       chainCount: 0, precisionStack: 0,
       s: {
         keys: 0, correct: 0, miss: 0, kills: 0, intercepts: 0,
         score: 0, combo: 0, maxCombo: 0, words: 0, damage: 0,
-        t0: performance.now(), elapsed: 0, hits: 0
+        t0: performance.now(), elapsed: 0, activeT: 0, hits: 0
       },
       finished: false, result: null
     };
@@ -182,7 +184,7 @@ ST.Game = (function () {
     for (var j = 0; j < PARTICLE_MAX; j++) particles[j].alive = false;
     bulletCount = 0; bulletCursor = 0;
     floaters.length = 0; tracers.length = 0; rings.length = 0;
-    swallowNT = 0; hudCache = {};
+    swallowNT = 0; pendingN = false; hudCache = {};
     shake.t = 0; shake.m = 0; flash.t = 0;
 
     G.diff = diff; G.stats = stats; G.player = run.player; G.newBullet = newBullet;
@@ -192,7 +194,7 @@ ST.Game = (function () {
     ST.UI.show(null);
     state = 'playing';
     lastT = performance.now();
-    toast(sector.ja, sector.hue ? '#4df3ff' : '#4df3ff');
+    toast(sector.ja, '#4df3ff');
     ST.Audio.resume();
     ST.Audio.startMusic();
     if (!raf) raf = requestAnimationFrame(loop);
@@ -465,23 +467,83 @@ ST.Game = (function () {
       tryOverdrive();
       return;
     }
+    /* IME が有効だと key は 'Process' になり、打鍵が届かない */
+    if (k === 'Process' || ev.isComposing || ev.keyCode === 229) {
+      ev.preventDefault();
+      imeWarn();
+      return;
+    }
     if (k === 'Spacebar') k = ' ';        /* 旧ブラウザ対策 */
     if (k.length !== 1) return;
+    k = toHalfWidth(k);
     var ch = k.toLowerCase();
     if (!/[a-z0-9\-,.\/' ]/.test(ch)) return;
     ev.preventDefault();
     handleChar(ch);
   }
 
+  /* 全角英数（IME の全角直接入力）を半角に寄せる */
+  function toHalfWidth(k) {
+    var c = k.charCodeAt(0);
+    if (c === 0x3000) return ' ';
+    if (c >= 0xFF01 && c <= 0xFF5E) return String.fromCharCode(c - 0xFEE0);
+    if (k === 'ー') return '-';
+    return k;
+  }
+
+  var imeEl = null, imeTimer = null;
+  function imeWarn() {
+    if (!imeEl) imeEl = document.getElementById('imeWarn');
+    if (!imeEl) return;
+    imeEl.classList.remove('hidden');
+    if (imeTimer) clearTimeout(imeTimer);
+    imeTimer = setTimeout(function () { imeEl.classList.add('hidden'); imeTimer = null; }, 2600);
+  }
+
+  /* 現在の打鍵の行き先 */
+  function destMatcher() {
+    var r = run;
+    if (r.mode === 'intercept') return r.ic.matcher;
+    return r.target && !r.target.dead ? r.target.matcher : null;
+  }
+
   function handleChar(ch) {
     var r = run;
-    /* 語尾「ん」の余剰 n を吸収 */
-    if (swallowNT > 0 && ch === 'n') { swallowNT = 0; return; }
-    /* オーバーキル直後の入力吸収 */
-    if (r.grace > 0) return;
+    /* オーバーキル直後は、倒した敵の単語の「残り」と一致する打鍵だけを吸収する。
+       一致しない打鍵が来たら次の敵を打ち始めたとみなし、猶予を打ち切る。 */
+    if (r.grace > 0) {
+      var gm = r.graceM;
+      if (gm && !gm.done && gm.feed(ch) !== 'miss') {
+        if (gm.done) { r.grace = 0; r.graceM = null; }
+        return;
+      }
+      r.grace = 0; r.graceM = null;
+    }
     /* ミス硬直 */
     if (r.stun > 0) return;
 
+    /* 保留していた n の決着。次の単語が「n + ch」を受け付けるなら頭の n だった。
+       受け付けず ch 単独なら通るなら余剰 n だった。どちらでもなければ頭の n として扱う
+       （その場合 ch は結局ミスになる）。 */
+    if (pendingN) {
+      pendingN = false;
+      var pm = destMatcher();
+      if (pm && (pm.accepts('n' + ch) || !pm.accepts(ch))) processChar('n');
+      if (r.stun > 0 || state !== 'playing') return;
+    }
+    /* 語尾「ん」を n 1打で確定した直後の n。余剰の n か、次の単語の頭の n かは
+       この時点では区別できないので、次の単語が n で始まるなら判断を保留する。 */
+    if (swallowNT > 0 && ch === 'n') {
+      swallowNT = 0;
+      var sm = destMatcher();
+      if (sm && sm.accepts('n')) pendingN = true;
+      return;
+    }
+    processChar(ch);
+  }
+
+  function processChar(ch) {
+    var r = run;
     r.s.keys++;
 
     /* 打鍵の行き先はモードだけで決まる。頭文字の衝突で狙いが逸れることはない。 */
@@ -697,7 +759,7 @@ ST.Game = (function () {
     if (r.target === e) {
       /* 単語を打ち切る前に落とした場合だけ、余った打鍵をミス扱いしない猶予を置く。
          打ち切って倒したときは即座に次の敵へ移れるよう猶予を入れない。 */
-      if (!(e.matcher && e.matcher.done)) r.grace = 0.4;
+      if (!(e.matcher && e.matcher.done)) { r.grace = 0.4; r.graceM = e.matcher; }
       refreshTarget();
     }
   }
@@ -726,7 +788,9 @@ ST.Game = (function () {
     p.hp -= dmg;
     p.inv = 0.22;                        /* 点滅のための視覚用タイマー（無敵ではない） */
     r.s.hits++;
-    r.s.combo = 0;
+    /* 被弾に無敵時間がないので、全損にすると密集弾の連続被弾で一瞬で消える。
+       コンボはタイピングの指標なので、被弾では半減にとどめる。 */
+    r.s.combo = Math.floor(r.s.combo / 2);
     r.precisionStack = 0;
     ST.Audio.play('hurt');
     shakeIt(0.4, 16);
@@ -1003,7 +1067,9 @@ ST.Game = (function () {
     var r = run, p = r.player, st = r.stats;
     r.s.elapsed += dt;
 
-    if (r.grace > 0) r.grace -= dt;
+    if (r.grace > 0) { r.grace -= dt; if (r.grace <= 0) r.graceM = null; }
+    /* 打/秒は戦闘中の時間だけで割る（ウェーブ間の演出時間は含めない） */
+    if (r.waveState === 'active' || r.waveState === 'bossfight') r.s.activeT += dt;
     if (r.stun > 0) r.stun -= dt;
     if (r.icCd > 0) r.icCd -= dt;
 
@@ -1215,11 +1281,7 @@ ST.Game = (function () {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     /* 背景 */
     var hue = r ? r.sector.hue : [200, 240];
-    var g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, 'hsl(' + hue[0] + ',60%,9%)');
-    g.addColorStop(0.55, '#04060f');
-    g.addColorStop(1, 'hsl(' + hue[1] + ',50%,6%)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = bgGradient(hue); ctx.fillRect(0, 0, W, H);
 
     /* シェイク */
     if (shake.t > 0) {
@@ -1241,6 +1303,26 @@ ST.Game = (function () {
     drawFloaters();
     drawOverlay();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /* グラデーションは毎フレーム作り直さず、宙域の色ごとに使い回す */
+  var bgCache = {}, vignette = null;
+  function bgGradient(hue) {
+    var key = hue[0] + '|' + hue[1];
+    if (bgCache[key]) return bgCache[key];
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'hsl(' + hue[0] + ',60%,9%)');
+    g.addColorStop(0.55, '#04060f');
+    g.addColorStop(1, 'hsl(' + hue[1] + ',50%,6%)');
+    bgCache[key] = g;
+    return g;
+  }
+  function vignetteGradient() {
+    if (vignette) return vignette;
+    vignette = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.78);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,.55)');
+    return vignette;
   }
 
   function drawStars() {
@@ -1584,17 +1666,14 @@ ST.Game = (function () {
       ctx.fillRect(0, 0, W, H);
     }
     /* ビネット */
-    var vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.78);
-    vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,.55)');
-    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = vignetteGradient(); ctx.fillRect(0, 0, W, H);
 
     /* エネルギーが尽きかけていて弾幕が来ているときだけ切替を促す */
     if (r.mode === 'attack' && r.threat > 0 && r.energy < r.stats.interceptCost * 4) {
       ctx.textAlign = 'center';
       ctx.font = '11px "Consolas",monospace';
       ctx.fillStyle = 'rgba(255,77,94,' + (0.45 + Math.sin(r.s.elapsed * 7) * 0.3) + ')';
-      ctx.fillText('迎撃エネルギー低下 &mdash; SPACE で充填'.replace('&mdash;', '-'), W / 2, H - 156);
+      ctx.fillText('迎撃エネルギー低下 - TAB で迎撃モードへ', W / 2, H - 156);
       ctx.textAlign = 'left';
     }
   }
@@ -1638,6 +1717,8 @@ ST.Game = (function () {
       $('wordPanel').classList.remove('locked');
     }
 
+    updateWordPanel();
+
     hudT -= 1;
     if (hudT > 0 && !force) return;
     hudT = 6;
@@ -1674,7 +1755,17 @@ ST.Game = (function () {
       setBar('bossFill', r.boss.hp / r.boss.maxHp);
     } else bw.classList.add('hidden');
 
-    /* 単語パネル */
+  }
+
+  /* 単語パネルは打鍵の手応えに直結するので、間引かずに毎フレーム反映する。
+     DOM への書き込みは内容が変わったときだけ。 */
+  function setHtml(id, v) {
+    if (hudCache[id] === v) return;
+    hudCache[id] = v;
+    var el = $(id); if (el) el.innerHTML = v;
+  }
+  function updateWordPanel() {
+    var r = run;
     var wp = $('wordPanel');
     if (r.mode === 'intercept' ? r.ic.matcher : (r.target && !r.target.dead)) {
       wp.classList.remove('hidden');
@@ -1684,12 +1775,12 @@ ST.Game = (function () {
         ? '迎撃エネルギー充填'
         : '目標  ' + r.target.def.ja + '   (残り ' + orderedEnemies().length + ')');
       var kp = m.kanaParts();
-      $('wordKana').innerHTML = '<span style="color:#1b7f8c">' + U.esc(kp[0]) + '</span>' + U.esc(kp[1]);
+      setHtml('wordKana', '<span style="color:#1b7f8c">' + U.esc(kp[0]) + '</span>' + U.esc(kp[1]));
       var parts = m.parts();
-      $('wDone').textContent = parts[0];
-      $('wNext').textContent = parts[1];
-      $('wRest').textContent = parts[2];
-      $('wordMeaning').textContent = m.sub || '';
+      setTxt('wDone', parts[0]);
+      setTxt('wNext', parts[1]);
+      setTxt('wRest', parts[2]);
+      setTxt('wordMeaning', m.sub || '');
     } else wp.classList.add('hidden');
   }
 
@@ -1697,7 +1788,7 @@ ST.Game = (function () {
      WPM は「英単語1語=5打鍵」という換算が前提で、ローマ字入力の日本語とは
      噛み合わない（同じ語でも打鍵数が入力方式で変わる）ため使わない。 */
   function kps() {
-    var s = run.s.elapsed;
+    var s = run.s.activeT;
     if (s < 1) return 0;
     return Math.round((run.s.correct / s) * 10) / 10;
   }
@@ -1736,7 +1827,11 @@ ST.Game = (function () {
     /* 戦利品 */
     var loot = cleared ? r.loot : r.loot.slice(0, Math.ceil(r.loot.length / 2));
     for (var i = 0; i < loot.length; i++) save.inventory.push(loot[i]);
-    if (save.inventory.length > 120) save.inventory = save.inventory.slice(-120);
+    /* 所持上限を超えた分は、価値の低いものから自動で売却する */
+    var overflow = ST.Items.trimInventory(save.inventory);
+    var overflowCr = 0;
+    for (var oi = 0; oi < overflow.length; oi++) overflowCr += ST.Items.sellPrice(overflow[oi]);
+    save.pilot.credits += overflowCr;
 
     /* 進行 & 記録 */
     if (cleared && !r.sector.endless) {
@@ -1761,6 +1856,7 @@ ST.Game = (function () {
       combo: r.s.maxCombo, kills: r.s.kills, words: r.s.words,
       intercepts: r.s.intercepts, hits: r.s.hits, time: r.s.elapsed,
       exp: Math.round(expGain), credits: credits, loot: loot, levels: lvres,
+      overflow: overflow.length, overflowCr: overflowCr,
       sector: r.sector, diff: run.diff, wave: r.waveIdx + 1
     };
     if (lvres.levels > 0) ST.Audio.play('levelup');

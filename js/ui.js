@@ -305,7 +305,7 @@ ST.UI = (function () {
     var d = ST.Save.d;
     var box = $('invList');
     box.innerHTML = '';
-    $('invCount').textContent = d.inventory.length + ' / 120';
+    $('invCount').textContent = d.inventory.length + ' / ' + I.INV_MAX;
     if (!d.inventory.length) {
       box.innerHTML = '<div style="color:#3d5570;font-size:11px;padding:8px">戦闘で装備を入手すると、ここに並びます。</div>';
       return;
@@ -321,6 +321,7 @@ ST.UI = (function () {
       var better = isUpgrade(it);
       row.innerHTML = '<span class="ir-lv">L' + it.ilvl + '</span>' +
         '<span class="ir-name r-' + it.rarity + '">' + U.esc(it.name) + '</span>' +
+        (it.locked ? '<span class="ir-lock">LOCK</span>' : '') +
         (better ? '<span class="ir-e">▲</span>' : '') +
         '<span class="ir-lv">' + slotShort(it.slot) + '</span>';
       row.onclick = function () {
@@ -391,6 +392,10 @@ ST.UI = (function () {
         ' (POWER ' + comparedTo.power + ')</div>';
     }
 
+    /* ロック中は売却ボタンを出さない（一括売却・所持上限の自動売却からも除外される） */
+    var sellBtn = it.locked ? '' :
+      '<button class="btn" id="btnSell">売却 ' + U.fmt(I.sellPrice(it)) + ' CR</button>';
+    var lockBtn = '<button class="btn ghost" id="btnLock">' + (it.locked ? 'ロック解除' : 'ロック') + '</button>';
     html += '<div class="detail-actions">';
     if (selectedItem.equipped) {
       html += '<button class="btn" id="btnUnequip">外す</button>';
@@ -399,17 +404,16 @@ ST.UI = (function () {
       html += '<button class="btn' + (targetSlotFor(it) === 'module1' ? ' primary' : '') +
         '" id="btnEquip1">拡張1へ</button>' +
         '<button class="btn' + (targetSlotFor(it) === 'module2' ? ' primary' : '') +
-        '" id="btnEquip2">拡張2へ</button>' +
-        '<button class="btn" id="btnSell">売却 ' + U.fmt(I.sellPrice(it)) + ' CR</button>';
+        '" id="btnEquip2">拡張2へ</button>' + sellBtn;
     } else {
-      html += '<button class="btn primary" id="btnEquip">装備する</button>' +
-        '<button class="btn" id="btnSell">売却 ' + U.fmt(I.sellPrice(it)) + ' CR</button>';
+      html += '<button class="btn primary" id="btnEquip">装備する</button>' + sellBtn;
     }
-    html += '</div>';
+    html += lockBtn + '</div>';
     box.innerHTML = html;
 
-    var be = $('btnEquip'), bs = $('btnSell'), bu = $('btnUnequip');
+    var be = $('btnEquip'), bs = $('btnSell'), bu = $('btnUnequip'), bl = $('btnLock');
     var b1 = $('btnEquip1'), b2 = $('btnEquip2');
+    if (bl) bl.onclick = function () { toggleLock(it); };
     if (be) be.onclick = function () { equipItem(it); };
     if (b1) b1.onclick = function () { equipItem(it, 'module1'); };
     if (b2) b2.onclick = function () { equipItem(it, 'module2'); };
@@ -450,10 +454,16 @@ ST.UI = (function () {
     selectedItem = null;
     buildHangar();
   }
+  function toggleLock(it) {
+    it.locked = !it.locked;
+    ST.Save.save();
+    ST.Audio.play('ui');
+    buildHangar();
+  }
   function sellItem(it) {
     var d = ST.Save.d;
     var idx = d.inventory.indexOf(it);
-    if (idx < 0) return;
+    if (idx < 0 || it.locked) { ST.Audio.play('deny'); return; }
     d.inventory.splice(idx, 1);
     d.pilot.credits += I.sellPrice(it);
     ST.Save.save();
@@ -479,7 +489,7 @@ ST.UI = (function () {
         '</p><div class="price">' + U.fmt(p.price) + ' CR</div></div>';
     });
     html += '</div>';
-    html += '<div class="setrow"><div class="s-lab"><b>一括売却</b><small>COMMON / UNCOMMON をまとめて売却します</small></div>' +
+    html += '<div class="setrow"><div class="s-lab"><b>一括売却</b><small>COMMON / UNCOMMON をまとめて売却します（ロック中は除く）</small></div>' +
       '<button class="btn" id="btnSellJunk">売却する</button></div>';
     html += '<div id="shopResult" style="margin-top:14px"></div>';
     $('shopBody').innerHTML = html;
@@ -490,11 +500,18 @@ ST.UI = (function () {
         cards[idx].onclick = function () { buy(packs[idx]); };
       })(i);
     }
+    junkArmed = false;
     $('btnSellJunk').onclick = sellJunk;
   }
 
   function buy(p) {
     var d = ST.Save.d;
+    if (d.inventory.length >= I.INV_MAX) {
+      ST.Audio.play('deny');
+      $('shopResult').innerHTML = '<div style="color:#ff4d5e;font-size:11px">所持品が上限 (' + I.INV_MAX +
+        ') に達しています。売却してから購入してください。</div>';
+      return;
+    }
     if (d.pilot.credits < p.price) {
       ST.Audio.play('deny');
       $('shopResult').innerHTML = '<div style="color:#ff4d5e;font-size:11px">資金が足りません。</div>';
@@ -518,15 +535,28 @@ ST.UI = (function () {
     var c = $('shopBody').querySelector('.credits');
     if (c) c.textContent = '所持資金 ' + U.fmt(ST.Save.d.pilot.credits) + ' CR';
   }
+  function isJunk(it) { return !it.locked && (it.rarity === 'common' || it.rarity === 'uncommon'); }
+  /* 取り返しがつかないので、1回目は件数と金額を見せて確認し、2回目で実行する */
+  var junkArmed = false;
   function sellJunk() {
     var d = ST.Save.d;
     var total = 0, n = 0;
-    d.inventory = d.inventory.filter(function (it) {
-      if (it.rarity === 'common' || it.rarity === 'uncommon') {
-        total += I.sellPrice(it); n++; return false;
-      }
-      return true;
-    });
+    d.inventory.forEach(function (it) { if (isJunk(it)) { total += I.sellPrice(it); n++; } });
+    var btn = $('btnSellJunk');
+    if (!n) {
+      ST.Audio.play('deny');
+      $('shopResult').innerHTML = '<div style="font-size:11px;color:#6f8bab">売却できる COMMON / UNCOMMON はありません。</div>';
+      return;
+    }
+    if (!junkArmed) {
+      junkArmed = true;
+      btn.textContent = n + '個 / ' + U.fmt(total) + ' CR で売却？';
+      ST.Audio.play('deny');
+      return;
+    }
+    junkArmed = false;
+    btn.textContent = '売却する';
+    d.inventory = d.inventory.filter(function (it) { return !isJunk(it); });
     d.pilot.credits += total;
     ST.Save.save();
     ST.Audio.play(n ? 'loot' : 'deny');
@@ -720,6 +750,10 @@ ST.UI = (function () {
       });
     } else {
       h += '<div class="loot-title">戦利品なし</div>';
+    }
+    if (res.overflow > 0) {
+      h += '<div style="font-size:11px;color:#ffc24d;margin-top:8px">所持上限を超えたため、価値の低い装備 ' +
+        res.overflow + ' 個を自動売却しました (+' + U.fmt(res.overflowCr) + ' CR)</div>';
     }
     $('resultBody').innerHTML = h;
     $('btnResultOk').onclick = function () {
